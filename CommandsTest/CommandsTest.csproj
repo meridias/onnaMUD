@@ -1,0 +1,31 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net7.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <Configurations>Debug;Release</Configurations>
+    <BaseOutputPath>C:\onnaMUD\onnaMUD-Core\bin</BaseOutputPath>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
+    <Optimize>True</Optimize>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
+    <Optimize>True</Optimize>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Remove="Commands\blank.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="Commands\blank.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\onnaMUD-Core\onnaMUD-Core.csproj" />
+  </ItemGroup>
+
+</Project>

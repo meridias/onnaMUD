@@ -1,0 +1,38 @@
+﻿ServerFunctions.ConnectedClient
+  incoming stream and gets parsed into full message
+  eof index at beginning and <EOF> at end gets removed
+  full message gets sent to:
+
+ServerMain.ProcessMessage
+  splits message at ::
+  first split (player guid) is basically ignored at this point
+  second split is message code to determine what kind of incoming we have
+  third split is full player-sent command
+  message gets sent to:
+
+server specific commandqueue
+  program.cs pulls commandqueue and sends it to:
+
+ServerMain.DoCommand
+  splits full message at ' ' into string[] array
+  finds command match and sends full string[] message array to command class
+
+
+so if we want to send a command for a player from the server, we need to just add 'player' and 'typed command' to server specific queue with ServerFunctions.AddCommandToQueue()
+
+
+honestly, since most of the other codes that get processed at ProcessMessage are all automatic, we really should Process (check message code, determine what to do),
+THEN put the message into a queue if it's something that needs to be in the queue, have Program pull queue, THEN DoCommand so we can add a fully typed out message
+into the queue for a player without having to worry about a player guid::code::message syntax
+
+
+old assembly name on onnaMUD-Core info, general:
+$(MSBuildProjectName)
+
+
+BsonIgnore is to ignore variables when saving to the database
+JsonIgnore is to ignore variables when serializing to a json string
+
+change Player class to not be an extension of Character, just put a Thing (or just Character) variable in Player class
+Character class is for all player characters and NPCs (all NPC characters AND hostile mobs)
+have a NPC class for NPC behavior(s) when not being run by an admin (shopkeeps, guildleaders, etc. and hostile mobs)

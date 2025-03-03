@@ -1,0 +1,19 @@
+000 = server authentication from game server to login/send new server guid from login to game server
+
+050 = user login from frontend
+052 = server to frontend - misc front-end messages (not output to user): logged-in account name, open edit windows, etc.
+nope 054 = server to frontend - new account window, open or close, is on 052 now
+055 = frontend to server - send new account info to verify (check account name and passwords)
+nope 060 = server to frontend - open/close different windows on client (newaccount, edit, etc...) is on 052 now
+
+090 = server to client, add clickable link
+092 = server to client, remove clickable links
+100 = command sent from client to server
+105 = clicked hyperlink from client
+110 = standard window output on client
+111 = server to client, room name (whole line highlight)
+
+nope 120 = sending info for editing from server to client
+nope 121 = sending class string for base class compilation from server to client, no
+
+10000 = user logout request
