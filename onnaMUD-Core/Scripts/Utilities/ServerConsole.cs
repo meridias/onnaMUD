@@ -27,6 +27,9 @@ namespace onnaMUD.Utilities
             newConsole.AutoFlush = true;
         }
 
+
+
+
         public async Task ConsoleWindow()
         {
             runConsole = true;
@@ -36,7 +39,7 @@ namespace onnaMUD.Utilities
             ServerMain workingServer = null;
 
             //after loading config, and check command line args, start any auto-start servers
-            if (ServerFunctions.servers.Count > 0)
+      /*      if (ServerFunctions.servers.Count > 0)
             {
                 newConsole.WriteLine("Auto-starting servers...");
                 await Task.Delay(1000);
@@ -57,7 +60,7 @@ namespace onnaMUD.Utilities
             {
                 newConsole.WriteLine("No servers are set for auto-start.");
                 await Task.Delay(1000);
-            }
+            }*/
             //newConsole.WriteLine($"{Environment.NewLine}");
             //Server workingServer = new Server();//the current server info we're dealing with, be it adding a new server or editing a current one
 
@@ -80,7 +83,7 @@ namespace onnaMUD.Utilities
                     case "main":
                         options.Clear();
                         newConsole.WriteLine($"{Environment.NewLine}Welcome to the onnaMUD main console!{Environment.NewLine}-------------------------------");
-                        int numOfServers = ServerFunctions.servers.Count;
+                 //       int numOfServers = ServerFunctions.servers.Count;
 
                         ShowServerStatus();
                         newConsole.WriteLine("");
@@ -169,9 +172,9 @@ namespace onnaMUD.Utilities
                                         //newConsole.WriteLine(newRoom.Id.ToString());
                                         //Server newServer = new Server();
                                         //newServer.serverInfo = temp;
-                                        ServerMain temp = new ServerMain();
-                                        ServerFunctions.servers.Add(temp);
-                                        SaveServer(temp);
+//                                        ServerMain temp = new ServerMain();
+//                                        ServerFunctions.servers.Add(temp);
+//                                        SaveServer(temp);
                                         newConsole.WriteLine("New server added!");
                                         await Task.Delay(1000);
                                         //menuWindow = "main";//this should still be main since we didn't go to another 'window'
@@ -397,7 +400,7 @@ namespace onnaMUD.Utilities
 
             void ShowServerStatus()
             {
-                if (ServerFunctions.servers.Count == 0)
+      /*          if (ServerFunctions.servers.Count == 0)
                 {
                     newConsole.WriteLine("No servers found in the database. Please create least 1 game server to get things going.");
                 }
@@ -416,7 +419,7 @@ namespace onnaMUD.Utilities
                             newConsole.WriteLine("Not started");
                         }
                     }
-                }
+                }*/
             }
 
             void ShowOptions(string optionsToShow)
@@ -570,7 +573,7 @@ namespace onnaMUD.Utilities
                 switch (optionsToSet)
                 {
                     case "main":
-                        if (ServerFunctions.servers.Count == 0)
+                  /*      if (ServerFunctions.servers.Count == 0)
                         {
                             Option addServer = new Option();
                             //addServer.index = 1;
@@ -615,7 +618,7 @@ namespace onnaMUD.Utilities
                             //newConsole.WriteLine($"{addServer.index}) Add server");
                             addServer.option = "add";
                             options.Add(addServer);
-                        }
+                        }*/
                         break;
                     case "edit":
                         for (int i = 0; i < 6; i++)
@@ -686,14 +689,14 @@ namespace onnaMUD.Utilities
             //update Server class in database
    //         DB.DBAccess.Save(server.serverInfo, DB.Collections.Server);
             //update serverMain with updated ServerInfo
-            for (int i = 0; i < ServerFunctions.servers.Count; i++)
-            {
-                if (ServerFunctions.servers[i] == server)
-                {
+      //      for (int i = 0; i < ServerFunctions.servers.Count; i++)
+      //      {
+      //          if (ServerFunctions.servers[i] == server)
+      //          {
    //                 ServerFunctions.servers[i].serverInfo = server.serverInfo;
                     //newConsole.WriteLine("saved!");
-                }
-            }
+      //          }
+      //      }
         }
 
         public async Task StartOrStopServer(ServerMain? tempServer)

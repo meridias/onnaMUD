@@ -1,0 +1,8 @@
+﻿
+
+50 = server to client - is server started, true/false, client to server - are you started? true/false
+55 = client to server - start/stop server, true means to start, false means to stop
+60 = server to client - server has finished startup, so output window knows to possible exit
+
+
+100 = server to client - straight text output

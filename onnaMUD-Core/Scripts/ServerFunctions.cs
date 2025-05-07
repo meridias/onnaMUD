@@ -20,14 +20,14 @@ using static Microsoft.EntityFrameworkCore.DbLoggerCategory.Database;
 using onnaMUD.Settings;
 using static onnaMUD.Utilities.ServerConsole;
 using System.Security.Policy;
-//using static onnaMUD.Program;
+using static onnaMUD.Program;
 
 namespace onnaMUD.MUDServer
 {
     public static class ServerFunctions
     {
-        static public List<ServerMain> servers = new List<ServerMain>();
-        static public ServerMain? server;
+        //static public List<ServerMain> servers = new List<ServerMain>();
+        //static public ServerMain? server;
         static public int numOfBytes = 1024;
 
         /// <summary>
@@ -85,7 +85,8 @@ namespace onnaMUD.MUDServer
             }
             catch (Exception)
             {
-                for (int i = 0; i < servers.Count; i++)
+                server.logFile.WriteLine($"Error with getting NetworkStream for {player.AccountID}. Connection issue?");
+             /*   for (int i = 0; i < servers.Count; i++)
                 {
                     for (int j = 0; j < servers[i].connections.Count; j++)
                     {
@@ -94,7 +95,7 @@ namespace onnaMUD.MUDServer
                             servers[i].logFile.WriteLine($"Error with getting NetworkStream for {player.AccountID}. Connection issue?");
                         }
                     }
-                }
+                }*/
                 return;
             }
             int tempIndex = 0;
@@ -124,7 +125,8 @@ namespace onnaMUD.MUDServer
             }
             catch (Exception)
             {
-                for (int i = 0; i < servers.Count; i++)
+                server.logFile.WriteLine($"Error with writing to NetworkStream for {player.AccountID}. Connection issue?");
+             /*   for (int i = 0; i < servers.Count; i++)
                 {
                     for (int j = 0; j < servers[i].connections.Count; j++)
                     {
@@ -133,7 +135,7 @@ namespace onnaMUD.MUDServer
                             servers[i].logFile.WriteLine($"Error with writing to NetworkStream for {player.AccountID}. Connection issue?");
                         }
                     }
-                }
+                }*/
                 return;
             }
         }
@@ -210,7 +212,8 @@ namespace onnaMUD.MUDServer
         {
             //Player newConnection = new Player();
             //check if guid is used already?
-            player.connectionStatus = Player.ConnectionStatus.Connecting;
+            //player.connectionStatus = Player.ConnectionStatus.Connecting;
+            //server.SendToConsole("connected?");
 //            player.Guid = Guid.NewGuid();
             //newConnection.Client = incomingClient;
 //            player.IP = player.Client.Client.RemoteEndPoint.ToString();//  incomingClient.Client.RemoteEndPoint.ToString();
@@ -267,7 +270,7 @@ namespace onnaMUD.MUDServer
    //             return;
    //         } else// if (showServers.Count == 1)
    //         {
-                ShowCharSelection(player);
+                //
                 //chosenServer = availableServers[0];
 //                SendData(player, $"<br>Connecting to {showServers[0].serverInfo.Name} server!<br>", false);
                 //find player in login connections
@@ -528,16 +531,16 @@ namespace onnaMUD.MUDServer
         public static Player GetPlayer(Character character)
         {
             Player tempPlayer = new Player();
-            for (int i = 0; i < servers.Count; i++)
-            {
-                for (int j = 0; j < servers[i].connections.Count; j++)
-                {
+           // for (int i = 0; i < servers.Count; i++)
+           // {
+           //     for (int j = 0; j < servers[i].connections.Count; j++)
+          //      {
              //       if (servers[i].connections[j].player.character == character)
                //     {
                  //       return servers[i].connections[j].player;
                    // }
-                }
-            }
+          //      }
+          //  }
             return tempPlayer;
         }
 
@@ -602,32 +605,36 @@ namespace onnaMUD.MUDServer
             //SendData(player, "Current characters:");
             if (characterList.Count == 0)
             {//if 0 characters, then only option is to make a new one
-                outputString += $"   (no characters created)<br>   1) <link=\"clicklink charselect 0\">Create new character</link><br>";
+                outputString += $"   (no characters created)<br>   1) <link=\"charselect new\">Create new character</link><br>";
                 //SendData(player, "   (no characters created)");
                 //SendData(player, $"<br>   1) <link=\"clicklink charselect 0\">Create new character</link><br>");
             }
             else
             {
+                //list all characters this player has
                 for (int i = 0; i < characterList.Count; i++)//  charList.Rows.Count; i++)
                 {
-                    if (characterList[i].Id != Guid.Empty)
-                    {
+                 //   if (characterList[i].Id != Guid.Empty)
+                 //   {
                         //was link=\"choose {i + 1}\"
-                        outputString += $"   {i + 1}) <link=\"clicklink charselect {i}\">{characterList[i].Name}</link>";
+                        outputString += $"   {i + 1}) <link=\"charselect {i}\">{characterList[i].Name}</link><br>";
                         //SendData(player, $"   {i + 1}) <link=\"clicklink charselect {i}\">{characterList[i].Name}</link>");//  charList.Rows[i]["charName"]}");
-                    }
-                    else
-                    {
-                        outputString += $"<br>   {i + 1}) <link=\"clicklink charselect {i}\">Create new character</link><br>";
+                 //   }
+                 //   else
+                 //   {
+                 //       outputString += $"<br>   {i + 1}) <link=\"clicklink charselect {i}\">Create new character</link><br>";
                         //SendData(player, $"<br>   {i + 1}) <link=\"clicklink charselect {i}\">Create new character</link><br>");
-                    }
+                 //   }
                 }
+                //then check to see if they are able to create another character
+                outputString += $"<br>   {characterList.Count + 1}) <link=\"charselect new\">Create new character</link><br>";
+
             }
             player.SendData(outputString);
             //SendData(player, outputString);
         }
 
-        public static List<ServerMain> ListAvailableServers(Player player)
+  /*      public static List<ServerMain> ListAvailableServers(Player player)
         {
             List<ServerMain> tempList = new List<ServerMain>();
 
@@ -664,7 +671,7 @@ namespace onnaMUD.MUDServer
  //               }
             }
             return tempList;
-        }
+        }*/
 
         private static async Task ConnectedClient(Player player)// TcpClient client, Player player)// Guid clientGUID)//this is for connecting clients on either login or game servers, any connected client
         {
@@ -757,7 +764,7 @@ namespace onnaMUD.MUDServer
                             firstMessage = firstMessage.Substring(7);//this basically removes the EOF index and first :: from the beginning of the message as we don't need it anymore
                             firstMessage = firstMessage.Remove(firstMessage.IndexOf("<EOF>"));
                             receivedDataBuffer = receivedDataBuffer.Remove(0, eofIndex + 5);
-
+                            //eofIndex = 0;
                             //logFile.WriteLine(firstMessage);
                             //Console.WriteLine(receivedDataBuffer.Length);
                             //send the first whole message to process, then trim that out
@@ -1029,7 +1036,7 @@ namespace onnaMUD.MUDServer
         /// </summary>
         /// <param name="player"></param>
         /// <returns></returns>
-        public static int GetCurrentServer(Player player)
+  /*      public static int GetCurrentServer(Player player)
         {
             //int index = -1;
             for (int i = 0; i < servers.Count; i++)
@@ -1053,7 +1060,7 @@ namespace onnaMUD.MUDServer
             //             return null;
             //       }
             return -1;// servers[index];
-        }
+        }*/
 
         public static void StartNewTimer(Player player, int timerSeconds, string timerType, string whenTimerEnds)//base timer
         {

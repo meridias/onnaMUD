@@ -17,22 +17,25 @@ class TimeStampedTextWriter : TextWriter
         get { return Encoding.ASCII; }
     }
 
-    public TimeStampedTextWriter(string logFileName)
+    public TimeStampedTextWriter()//string logFileName)
     {
-        logFile = logFileName;
+        //logFile = logFileName;
 
     }
 
     public override void WriteLine(string message)
     {
-        if (!isFileCreated)
-        {
-            logStream = File.CreateText(logFile);
-            logStream.AutoFlush = true;
-            isFileCreated = true;
-        }
-        logStream.WriteLine(String.Format("{0} {1}", DateTime.Now.ToString("HH:mm:ss"), message));
-        ServerConsole.newConsole.WriteLine(message);
+        /*   if (!isFileCreated)
+           {
+               logStream = File.CreateText(logFile);
+               logStream.AutoFlush = true;
+               isFileCreated = true;
+           }
+           logStream.WriteLine(String.Format("{0} {1}", DateTime.Now.ToString("HH:mm:ss"), message));
+           ServerConsole.newConsole.WriteLine(message);*/
+        Console.WriteLine($"***ERROR***{message}");//this will send this error message to the currently redirected console output (which is the logFile)
+        
+        //logStream.WriteLine($"***ERROR***{message}");
     }
 
     public override void Write(string message)

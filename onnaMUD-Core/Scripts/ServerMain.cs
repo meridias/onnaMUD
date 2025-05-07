@@ -8,12 +8,13 @@ using System.Threading.Tasks;
 using System.Runtime.Loader;
 //using static onnaMUD.ServerMain;
 using System.Data.SQLite;
-using Microsoft.CodeAnalysis;
-using Microsoft.CodeAnalysis.CSharp;
-using Microsoft.CodeAnalysis.Text;
+//using Microsoft.CodeAnalysis;
+//using Microsoft.CodeAnalysis.CSharp;
+//using Microsoft.CodeAnalysis.Text;
 using System.Reflection;
-using Microsoft.CodeAnalysis.Emit;
+//using Microsoft.CodeAnalysis.Emit;
 using System.Data;
+using System.Collections.Concurrent;
 using onnaMUD.Settings;
 using onnaMUD.Database;
 using onnaMUD.Utilities;
@@ -21,60 +22,41 @@ using onnaMUD.Utilities;
 using onnaMUD.Characters;
 using onnaMUD.BaseClasses;
 //using onnaMUD.Rooms;
-using Microsoft.CodeAnalysis.CSharp.Syntax;
+//using Microsoft.CodeAnalysis.CSharp.Syntax;
 using System.Numerics;
 using System.IO;
 using onnaMUD.Temps;
 using System.Xml.Linq;
 using System.IO.Pipes;
+using Newtonsoft.Json.Linq;
+using static onnaMUD.Settings.Config;
+using static onnaMUD.Utilities.ServerConsole;
 
 namespace onnaMUD.MUDServer
 {
     public class ServerMain
     {
-        //public Config.SettingsServers? currentServer;
-        //public string serverName;
-        //public string serverType;
-        //public bool debug;
-        //public bool isDefault;
-        //public Guid firstRoom;
-        //public Guid serverID;
-        //public int port;
-        //public bool autoStart;
-        //public Server serverInfo;
-
         public string serverSubDir = "";
+        public string pluginDir = "";
 
         public int numOfBytes = 1024;
-        //static public ServerInfo? currentServer = null;
-        //private IPAddress ipAddress;//the ip and port that this server is listening on
-        //private int port;
-        //private int serverPort;
-        //private string? serverType;
-        //private string? serverName;
+
         private TcpListener? listener;
         private Task? listenerTask;
         private Task? logoutTask;
         private Task? roundtimeCheck;
         private Task? randomOutput;
-        //private TcpListener? serverListener;//the listener on the login server for the game servers to connect to
-        //private TcpClient? loginClient;
-        private bool isListening = false;
-        private bool doLogouts = false;
-        private bool checkRTs = false;
-        private bool doRandom = false;
-        //private List<Task> listenerTasks = new List<Task>();
-        //private Task? listenerTask;
-        //private Task? serverListenerTask;
-        //private List<Task> clientTasks = new List<Task>();//this is for all incoming data tasks for all clients (server connections and users) so we can check them for dropped connections
-        //private List<Task> serverConnections = new List<Task>();
-        //private List<TcpClient> connectedServers = new List<TcpClient>();//connected game servers on the login server
-        //private IPEndPoint endPoint;
-        //public IPHostEntry host = Dns.GetHostEntry("localhost");
-        //public IPAddress ipAddress = host.AddressList[0];
-        //public IPEndPoint localEndPoint = new IPEndPoint(ipAddress, 11000);
+        //private bool isListening = false;
+        //private bool doLogouts = false;
+        //private bool checkRTs = false;
+        //private bool doRandom = false;
+        //private bool checkQueue = false;
+
         //public ManualResetEvent serverResetEvent = new ManualResetEvent(false);
+        public bool isServerCreated = false;
         public bool serverIsRunning = false;
+        public bool doServerTasks = false;//use this for all the server task bools
+        public bool waitForPipeClient = false;
 
         //private Guid serverGuid = Guid.Empty;
 
@@ -89,261 +71,217 @@ namespace onnaMUD.MUDServer
         //public List<NewTrial> newTrialAccounts = new List<NewTrial>();
         public List<CommandQueue> commandQueue = new List<CommandQueue>();
         public List<InstancedRegions> regions = new List<InstancedRegions>();
-        public AssemblyLoadContext? commandAssembly;// = new AssemblyLoadContext("commands", true);
+        //public AssemblyLoadContext? commandAssembly;// = new AssemblyLoadContext("commands", true);
         public WeakReference assemWeak;
 
         public List<PlayerTimers> playerTimers = new List<PlayerTimers>();
         public List<Task> tasks = new List<Task>();
+        public ConcurrentQueue<Task> taskQueue = new ConcurrentQueue<Task>();
 
         //cache stuff here to make it easier on the database?
         public List<Room> roomCache = new List<Room>();
         public NamedPipeServerStream? namedPipeServer = null;// new NamedPipeServerStream(Config.pipeName, PipeDirection.InOut, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous);// new NamedPipeServerStream(Config.pipeName, PipeDirection.InOut, 1);//, PipeTransmissionMode.Message);Message only works for windows?
+        public ProcessPipe consolePipe;
+        private Task? clientPipeTask = null;
+        private bool isOutputConnected = false;
         public Task? serverPipeRead = null;
         private bool readFromPipe = false;
-        public TaskCompletionSource<bool> isOutputConnected = new TaskCompletionSource<bool>(false);
+        //public TaskCompletionSource<bool> isOutputConnected = new TaskCompletionSource<bool>(false);
 
         //hopefully I'll eventually get to the point where the server class itself handles just the scheduling of tasks and other management/maintenance stuff
         //the ServerFunctions will have all the actual functions to do stuff
-        public ServerMain()// string name, string type, bool doDebug)//  string serverToStart)// ServerMain.ServerInfo serverToStart)
+        public ServerMain(ProcessPipe processPipe)// string name, string type, bool doDebug)//  string serverToStart)// ServerMain.ServerInfo serverToStart)
         {
-            //create the NamedPipeServerStream here before anything else so we can get the pipe connected to the temp output/server console
-            //for the server startup messages
-            //then load the config for the server
-            //do all the database checks, account info, etc in the StartServer method
+            isServerCreated = false;
+            consolePipe = processPipe;
 
-            //          configLoaded = Config.LoadConfig();//true if we loaded an existing appSettings, false if we had to make a new one
-            try
-            {
-                namedPipeServer = new NamedPipeServerStream(Config.pipeName, PipeDirection.InOut, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
-                tasks.Add(WaitForPipeClient());
-            }
-            catch (IOException)
-            {
-                //tried to start another server instance
-
-            }
-
-            //  Config.SettingsServers? currentServer = Config.GetServerInfo(serverToStart);
-
-            //  if (currentServer == null)
-            //  {
-            //      Console.WriteLine($"Settings for server {serverToStart} could not be found or parsed correctly.");
-            //      Console.WriteLine("Please check appsettings.json for correct information. Exiting...");
-            //      return;
-            //  } else
-            //  {
-            //serverInfo = server;
-            //serverName = server.Name;
-            //serverType = server.Type;
-            //debug = server.Debug;
-            //isDefault = server.IsDefault;
-            //firstRoom = server.FirstRoom;
-            //serverID = server.Id;
-            //port = server.ServerPort;
-            //autoStart = server.AutoStart;
-            //  }
-        }
-
-        /*           public Server(int serverListIndex)
-                   {
-                       ServerInfo serverInfo = serversList[serverListIndex];
-                       ipAddress = serverInfo.ipAddress;
-                       port = serverInfo.port;
-                       serverType = serverInfo.type;
-                       serverName = serverInfo.serverName;
-
-                       if (serverInfo.type == "login")
-                       {
-                           serverPort = serverInfo.serverPort;
-                       }
-                       Console.Title = $"{Config.ConfigInfo("gameName")} {serverInfo.serverName.ToUpper()} server";
-                       //Console.WriteLine("just checking");
-
-                       //Process.GetCurrentProcess().EnableRaisingEvents = true;
-                       //Process.GetCurrentProcess().Exited += ServerHasShutdown;// new EventHandler(ServerHasShutdown);
-
-                       StartServer();
-
-                       //Console.WriteLine("blah");
-                       //Console.ReadLine();
-                       while (true)//while true? maybe some other bool might be better here
-                       {
-                           //check tasks are 
-                           if (serverHasStarted)
-                           {
-                               if (clientTasks.Count > 0)
-                               {
-                                   for (int i = 0; i < clientTasks.Count; i++)
-                                   {
-                                       if (clientTasks[i].Status != TaskStatus.Running)//if the status of this task is not running (do we need to check for anything else? if it's anything else besides running, something's wrong?)
-                                       {
-                                           //TcpClient tempClient = clientTasks[i].
-                                       } else
-                                       {
-                                           //Console.WriteLine("doh");
-                                       }
-                                   }
-                               } else
-                               {
-                                   //Console.WriteLine("blahblah");
-                               }
-                               //Console.WriteLine("waiting");
-                               Thread.Sleep(1000);//pause for 1 second every loop
-                           } else
-                           {
-                               //Thread.Sleep(1000);//wait for a second
-                           }
-
-                           //Console.WriteLine("blah");
-                       }
-                       //Console.ReadLine();
-
-                   }*/
-
-
-        public async Task<Task> StartServer()//  public void StartServer()
-        {
-            if (!Config.LoadConfig())
-                return null;//if we had to create a new appsettings.json file, exit so user can edit file as needed
-
+            //Make sure server subdirectories are created
             serverSubDir = Directory.GetCurrentDirectory();//  Path.Combine(Directory.GetCurrentDirectory(), Config.config.gameName);
-
-            //make sure the main server directory and logs directory are created
-     //       if (!Directory.Exists(serverSubDir))
-     //       {
-                //main server subdirectory
-     //           Directory.CreateDirectory(serverSubDir);
-     //       }
             if (!Directory.Exists(Path.Combine(serverSubDir, "logs")))
             {
                 //subdirectory for log files
                 Directory.CreateDirectory(Path.Combine(serverSubDir, "logs"));
             }
-            if (!Directory.Exists(Path.Combine(serverSubDir, "plugins")))
+            pluginDir = Path.Combine(serverSubDir, "plugins");
+            if (!Directory.Exists(pluginDir))
             {
                 //subdirectory for dll plugin files (commands, etc.)
-                Directory.CreateDirectory(Path.Combine(serverSubDir, "plugins"));
+                Directory.CreateDirectory(pluginDir);
             }
 
-            /*           if (!Directory.Exists(Path.Combine(serverSubDir, "commands")))
-                       {
-                           //subdirectory for compiled command dll files
-                           Directory.CreateDirectory(Path.Combine(serverSubDir, "commands"));
-                       }
-                       string scriptDir = Path.Combine(Directory.GetCurrentDirectory(), "command scripts");
-                       if (serverType == "game")// serverType == "game")
-                       {
-                           //if this is a game server
-                           if (!Directory.Exists(Path.Combine(scriptDir, serverName)))
-                           {
-                               //subdirectory under 'command scripts' for this server to put command .cs scripts to be compiled from
-                               Directory.CreateDirectory(Path.Combine(scriptDir, serverName));
-                           }
-                       }*/
+            //start up the named pipe server for console output
+            // we do this first before making a new log file so if pipe fails, we don't make a new empty log file for no reason
+            //no longer needed here, this is done in the processPipe that is made in Program before servermain is made
+       /*     try
+            {
+                namedPipeServer = new NamedPipeServerStream(config.serverName, PipeDirection.InOut, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
+                taskQueue.Enqueue(WaitForPipeClient());
+                //tasks.Add(WaitForPipeClient());
+            }
+            catch (IOException)
+            {
+                //tried to start another server instance
+                return;
+            }*/
 
-            logFile = new TimeStampedStream(Config.GetNextLogFileName(Path.Combine(serverSubDir, "logs"), Config.config.gameName));
-            logFile.AutoFlush = true;
+            //if we get to this point, then this server hasn't been started yet, else the creation of another named pipe of same name would have errored out
 
-            logFile.WriteLine($"Starting up {Config.config.gameName} server...");
-            //ServerConsole.newConsole.WriteLine($"Starting up {Config.config.gameName} server...");
-            ConsoleOutput.SendConsole($"Starting up {Config.config.gameName} server...");
+            //start the log file so we can immediately start logging server output
+ /*           try
+            {
+                string logFileName = GetNextLogFileName(Path.Combine(serverSubDir, "logs"), config.serverName);
+                //SendToConsole(logFileName);
+                logFile = new TimeStampedStream(logFileName);// GetNextLogFileName(Path.Combine(serverSubDir, "logs"), config.serverName));
+                
+                //StreamWriter errorLog = new StreamWriter(logFile);
+                //StreamWriter errorLog = new TimeStampedErrorStream(logFileName);
+                logFile.AutoFlush = true;
+                Console.SetOut(logFile);
+                //errorLog.AutoFlush = true;
+                Console.SetError(new TimeStampedTextWriter());
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine(ex.ToString());
+                Console.ReadKey();
+            }*/
+            isServerCreated = true;
+        }
+
+        public void Log(string message)
+        {
+            //logFile.WriteLine("Caching rooms from database...");
+            if (logFile != null)
+            {
+                logFile.WriteLine(message);
+                logFile.Flush();
+            }
+        }
+
+        /*           public Server(int serverListIndex)
+                   {
+
+                       //Process.GetCurrentProcess().EnableRaisingEvents = true;
+                       //Process.GetCurrentProcess().Exited += ServerHasShutdown;// new EventHandler(ServerHasShutdown);
+                   }*/
+
+
+        public async Task StartServer()//  public void StartServer()
+        {
+            //start the log file so we can immediately start logging server output
+            try
+            {
+                string logFileName = GetNextLogFileName(Path.Combine(serverSubDir, "logs"), config.serverName);
+                //SendToConsole(logFileName);
+                logFile = new TimeStampedStream(logFileName);// GetNextLogFileName(Path.Combine(serverSubDir, "logs"), config.serverName));
+
+                //StreamWriter errorLog = new StreamWriter(logFile);
+                //StreamWriter errorLog = new TimeStampedErrorStream(logFileName);
+                logFile.AutoFlush = true;
+                Console.SetOut(logFile);
+                //errorLog.AutoFlush = true;
+                Console.SetError(new TimeStampedTextWriter());
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine(ex.ToString());
+                Console.ReadKey();
+            }
+
+            doServerTasks = true;
+            //          if (!Config.LoadConfig())
+            //              return;//if we had to create a new appsettings.json file, exit so user can edit file as needed
+
+            //gotta see if the db is there before we try to connect to it to do stuff
+            consolePipe.SendToConsole("Checking for local database...");
+            //logFile.WriteLine("Checking for local database...");
+            Log("Checking for local database...");
+            await Task.Delay(500);
+            DB.CheckForLocalDB();
+            consolePipe.SendToConsole("Local database loaded.");
+            Log("Local database loaded");
             await Task.Delay(1000);
-            //these are now part of the normal commands in CommandsTest, or whatever group of commands I'll have
-            /*           //manually add trial command here for all servers
-                       Trial trial = new Trial();
-                       for (int i = 0; i < trial.Aliases.Length; i++)
-                       {
-                           Commands tempCom = new Commands();
-                           tempCom.commandAlias = trial.Aliases[i];
-                           tempCom.commandClass = trial;
-                           commandList.Add(tempCom);
-                       }
-                       //manually add choose command here for all servers
-                       //gonna take this out of login servers in favor of clickable links only
-                       //once I get it all set the way I want
-                       Choose choose = new Choose();
-                       for (int i = 0; i < choose.Aliases.Length; i++)
-                       {
-                           Commands tempCom = new Commands();
-                           tempCom.commandAlias = choose.Aliases[i];
-                           tempCom.commandClass = choose;
-                           commandList.Add(tempCom);
-                       }*/
+            consolePipe.SendToConsole("Setting account values...");
+            Log("Setting account values...");
+            //this is to input the account types and their settings into the list of account types
+            for (int i = 0; i < Enum.GetValues(typeof(AccountType)).Length; i++)
+            {
+                switch (i)
+                {
+                    case 0://trial account
+                        accountSettings.Add(new AccountSettings((AccountType)i, 1, 1));
+                        break;
 
-            //do stuff that every server does
-            logoutTask = CharacterLogoutTask();//this is what removes logged-in characters from the list after the client has/has been disconnected
 
-            //          switch (serverType)//this is for login/game server type specific stuff, ie: game servers will have other tasks that need to be run: time-keeping, npcs, etc
-            //          {
-            //               case "login":
+                }
+            }
+            await Task.Delay(500);
+            consolePipe.SendToConsole("Account values set.");
+            Log("Account values set.");
+            await Task.Delay(1000);
 
-            //                    commandAssembly = new AssemblyLoadContext("commands", true);//do we even need these just for the login server?
-            //                    assemWeak = new WeakReference(commandAssembly);
-            //Commands tempCom = new Commands();
-            //tempCom.commandName = "trial";
-            //commandList.Add("trial");
-            //commandList.Add(tempCom);
-            //serverGuid = Guid.NewGuid();//do we even need this?
-            //listenerTask = StartListening();
-            //logFile.WriteLine("logoutTask");
+            //Log($"Starting up {config.gameName} server...");
+            //SendToConsole($"Starting up {Config.config.gameName} server...");
+            //await Task.Delay(500);
+
             //logoutTask = CharacterLogoutTask();//this is what removes logged-in characters from the list after the client has/has been disconnected
-            //logFile.WriteLine("remove dll");
-            //                    RemoveCompiledDLLs(Path.Combine(serverSubDir, "commands"));
-            //logFile.WriteLine("compile");
-            //                    CompileCommands("all", Path.Combine(serverSubDir, "commands"));
-            //CompileCommands(Path.Combine(Config.scriptDir, "all"), Path.Combine(serverSubDir, "commands"));
-            //CompileCommands(Path.Combine(serverSubDir, "scripts"), Path.Combine(serverSubDir, "commands"));
-            //logFile.WriteLine("load");
-            //                    LoadCommandDLLs(Path.Combine(serverSubDir, "commands"));
-            //serverListener = new TcpListener(ipAddress, serverPort);
-            //serverListener = TcpListener.Create(currentServer.serverPort);
-            //serverListener.Start();
-            //listenerTasks.Add(StartListeningForGameServers());
-            //serverListenerTask = StartListeningForGameServers();
-            //start login gameserverlistener task
-            //                    logFile.WriteLine($"{loadedCommands} command dlls loaded into command list!");
-            //                   logFile.WriteLine($"{commandList.Count} total command aliases in list!");
-            //                    ServerConsole.newConsole.WriteLine($"{loadedCommands} command dlls loaded into command list!");
-            //                    ServerConsole.newConsole.WriteLine($"{commandList.Count} total command aliases in list!");
-            //                    listenerTask = StartListening();//now we're just gonna have each server listen on its own port
-            //                    break;
-            //               case "game"://we'll need to figure out live/test specific stuff eventually
-            logFile.WriteLine("Loading admin commands");//eventually
-            //ServerConsole.newConsole.WriteLine("Loading admin commands");
-            ConsoleOutput.SendConsole("Loading admin commands");
-            await Task.Delay(1000);
 
-            //blah, load commands
-            logFile.WriteLine("Admin commands loaded");//eventually
+            Log("Loading admin commands...");//eventually
+            //ServerConsole.newConsole.WriteLine("Loading admin commands");
+            consolePipe.SendToConsole("Loading admin commands...");
+            await Task.Delay(500);
+            LoadAdminCommands();
+            //blah, load commands that are part of the core server, ie: admin commands
+           // Log("Admin commands loaded");//eventually
             //ServerConsole.newConsole.WriteLine("Admin commands loaded");
-            ConsoleOutput.SendConsole("Admin commands loaded");
-            commandAssembly = new AssemblyLoadContext("commands", true);
-            assemWeak = new WeakReference(commandAssembly);
-            //empty out compiled command directory
-            //compile and create dll for all command scripts in command scripts directory
-            //load all compiled dlls for commands
-            //                    RemoveCompiledDLLs(Path.Combine(serverSubDir, "commands"));
-            //                    CompileCommands(serverName, Path.Combine(serverSubDir, "commands"));
-            //CompileCommands(Path.Combine(serverSubDir, "scripts"), Path.Combine(serverSubDir, "commands"));
-            //LoadCommandDLL(Path.Combine(serverSubDir, "commands"));
-            LoadCommandDLL(serverSubDir);
-            //ServerConsole.newConsole.WriteLine("Caching rooms from database...");
-            logFile.WriteLine("Caching rooms from database...");
-            //ServerConsole.newConsole.WriteLine("Caching rooms from database...");
-            ConsoleOutput.SendConsole("Caching rooms from database...");
+          //  consolePipe.SendToConsole("Admin commands loaded");
+
+            //load all dll files from /plugins directory. load all ICommand classes/aliases into command list, then sort after
             await Task.Delay(1000);
+ //           commandAssembly = new AssemblyLoadContext("commands", true);
+ //           assemWeak = new WeakReference(commandAssembly);
+
+            consolePipe.SendToConsole("Start loading plugin files...");
+            Log("Start loading plugin files...");
+            await Task.Delay(500);
+            LoadPluginDLL(serverSubDir);
+            //ServerConsole.newConsole.WriteLine("Caching rooms from database...");
+
+            await Task.Delay(1000);
+            Log("Caching rooms from database...");
+            //ServerConsole.newConsole.WriteLine("Caching rooms from database...");
+            consolePipe.SendToConsole("Caching rooms from database...");
+            await Task.Delay(500);
+
+            //load the room DB. only add rooms that aren't instanced since those will be created on the fly?
             roomCache = DB.DBAccess.GetList<Room>(DB.Collections.Room);
             //ServerConsole.newConsole.WriteLine("Rooms loaded!");
-            logFile.WriteLine("Done loading rooms");
+            Log("Done loading rooms");
             //ServerConsole.newConsole.WriteLine("Done loading rooms");
-            ConsoleOutput.SendConsole("Done loading rooms");
+            consolePipe.SendToConsole("Done loading rooms");
             await Task.Delay(1000);
             roundtimeCheck = CheckPlayerTimers();
             //randomOutput = RandomOutput();
-            listenerTask = StartListening();
-            logFile.WriteLine($"{Config.config.gameName} server started!");
+            Log("Starting server tasks...");
+            consolePipe.SendToConsole("Starting server tasks...");
+            await Task.Delay(500);
+            //listenerTask = StartListening();
+            logoutTask = CharacterLogoutTask();//this is what removes logged-in characters from the list after the client has/has been disconnected
+
+            taskQueue.Enqueue(CheckQueueForCommands());
+            Log("Command queue started.");
+            consolePipe.SendToConsole("Command queue started.");
+            await Task.Delay(1000);
+
+            taskQueue.Enqueue(StartListening());
+            Log($"{config.gameName} {config.serverName} listening on port {config.port}");
+            consolePipe.SendToConsole($"{config.gameName} {config.serverName} listening on port {config.port}");
+            await Task.Delay(1000);
+
+            Log($"{Config.config.gameName} server started!");
             //ServerConsole.newConsole.WriteLine($"{Config.config.gameName} server started!");
-            ConsoleOutput.SendConsole($"{Config.config.gameName} server started!");
+            consolePipe.SendToConsole($"{Config.config.gameName} server started!");
+            await Task.Delay(1000);
             //                  break;
 
             //           }
@@ -355,122 +293,217 @@ namespace onnaMUD.MUDServer
 
             //start a task to keep the server running and return that task
             serverIsRunning = true;
-
+            consolePipe.SendToConsole("60", "blah");
             
-            return ServerRunning();
+            //return ServerRunning();
         }
 
-        async Task WaitForPipeClient()
+ /*       async Task WaitForPipeClient()
         {
-            try
-            {
-                await namedPipeServer.WaitForConnectionAsync();
-                tasks.Add(ReadFromPipe());
-                isOutputConnected.SetResult(true);
-            }
-            catch (Exception ex)
-            {
-                logFile.WriteLine($"WaitForPipeClient: {ex}");
-                return;
-            }
-
-        }
-
-        async Task ReadFromPipe()
-        {
-            StreamReader pipeReading = new StreamReader(namedPipeServer);
-            int numOfChar = 1024;
-            char[] chars = new char[numOfChar];
-            string receivedStringBuffer = "";
-            bool checkMessage = false;
-            readFromPipe = true;
-
-            while (readFromPipe)
+            //this SHOULD wait for a connection, then do ReadFromPipe until connection is broke, then loop back and wait for another connection?
+            waitForPipeClient = true;
+            //Console.WriteLine("pipe waiting");
+            while (waitForPipeClient)
             {
                 try
                 {
-                    int charsRec = await pipeReading.ReadAsync(chars, 0, numOfChar);
-                    if (charsRec > 0)
-                    {
-                        receivedStringBuffer += new string(chars);
-                        checkMessage = true;
-                    }
-                    else
-                    {
-                        readFromPipe = false;
-                        //return;
-                    }
+                    //Log("waiting for pipe client");
+                    await namedPipeServer.WaitForConnectionAsync();
+                    //Log("pipe client connected. reading...");
+                    isOutputConnected = true;
+                    //Log("blah?");
+                    //SendToConsole("50", serverIsRunning.ToString());
+                    await ReadFromPipe();
+                    //Log("pipe client disconnected.");
+                    isOutputConnected = false;
+                    //clientPipeTask = ReadFromPipe();
+                    //SendToConsole("connected");
+                    //tasks.Add(ReadFromPipe());
+                    //isOutputConnected.SetResult(true);
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine(ex.Message);
-                    readFromPipe = false;
-                }
-
-                while (checkMessage)
-                {
-                    Console.WriteLine(receivedStringBuffer);
-                    //                  if (blah)
-                    //                  {
-
-
-
-                    //                  } else
-                    //                  {
-                    checkMessage = false;
-                    //                  }
+                    //logFile.WriteLine($"WaitForPipeClient: {ex}");//if we're doing this at server startup, logfile isn't set yet so this errors
+                    SendToConsole(ex.ToString());
+                    //Console.ReadLine();
+                    return;
                 }
             }
+
+        }*/
+
+ /*       async Task ReadFromPipe()
+        {
+            //StreamReader pipeReading = new StreamReader(namedPipeServer);
+            int numOfBytes = 1024;
+            string receivedDataBuffer = "";
+            byte[] bytes = new byte[numOfBytes];
+            bool checkMessage = false;
+            int eofIndex = 0;
+            readFromPipe = true;
+
+            try
+            {
+                //StreamReader pipeReading = new StreamReader(namedPipeServer);
+
+                while (readFromPipe)
+                {
+                    try
+                    {
+                        //int charsRec = await pipeReading.ReadAsync(chars, 0, numOfChar);
+                        int bytesRec = await namedPipeServer.ReadAsync(bytes, 0, numOfBytes);
+                        if (bytesRec > 0)
+                        {
+                            receivedDataBuffer += Encoding.ASCII.GetString(bytes, 0, bytesRec);
+                            checkMessage = true;
+                        }
+                        else
+                        {
+                            readFromPipe = false;
+                            namedPipeServer.Disconnect();
+                            //return;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine(ex.Message);
+                        readFromPipe = false;
+                    }
+
+                    while (checkMessage)
+                    {
+                        //Console.WriteLine(receivedStringBuffer);
+                        if (receivedDataBuffer.IndexOf("::") == 5)
+                        {
+                            try
+                            {
+                                eofIndex = Int32.Parse(receivedDataBuffer.Substring(0, 5));//parse the first 5 characters for the index of EOF
+                            }
+                            catch (FormatException)
+                            {
+                               // SendToLogfile(player, $"{player.AccountID} has an invalid message index. Clearing data buffer.");
+
+                                //player.SendData("There was an communications error. Please try again.");
+                                //SendData(player, "There was an communications error. Please try again.");
+                                checkMessage = false;
+                                receivedDataBuffer = "";
+                                //return;
+                            }
+
+                            if (eofIndex > 0 && receivedDataBuffer.Length >= eofIndex + 4)// receivedStringBuffer.IndexOf("<EOF>") > 0)//if we've gotten any data from the client pipe at all
+                            {
+                                //int stringLength = receivedStringBuffer.IndexOf("<EOF>") + 5;
+                                string firstMessage = receivedDataBuffer.Substring(0, eofIndex + 5);// receivedStringBuffer.Substring(0, stringLength);
+                                firstMessage = firstMessage.Substring(7);
+                                firstMessage = firstMessage.Remove(firstMessage.IndexOf("<EOF>"));
+                                receivedDataBuffer = receivedDataBuffer.Remove(0, eofIndex + 5);// receivedStringBuffer.Remove(0, stringLength);
+                                //Console.WriteLine(firstMessage);
+                                //eofIndex = 0;
+                               // ConsoleCommands.DoConsoleCommand(firstMessage);
+                            }
+                            else
+                            {
+                                checkMessage = false;
+                            }
+                        } else
+                        {
+                            checkMessage = false;
+                        }
+                    }
+                }
+            }
+            catch (IOException ex)
+            {
+                //not sure if this is for the StreamReader or the read
+
+
+            }
+
+            //once readFromPipe=false, we need to make sure pipe client is closed, then start a new WaitForPipeClient task in the server queue for the next? client pipe
+
+
+        }*/
+
+ /*       public void SendToConsole(string message)
+        {
+            SendToConsole("100", message);
+
         }
+
+        public void SendToConsole(string msgCode, string message)
+        {
+            int tempIndex = 0;
+            string indexString = tempIndex.ToString("D5");
+
+            string msgString = indexString + "::" + msgCode + "::" + message + "<EOF>";
+
+            tempIndex = msgString.IndexOf("<EOF>");
+            indexString = tempIndex.ToString("D5");
+
+            msgString = indexString + "::" + msgCode + "::" + message + "<EOF>";
+            //message = message + "<EOF>";
+
+            byte[] msg = Encoding.ASCII.GetBytes(msgString);
+            //     if (Program.pipeStream != null)
+            //     {
+            //Program.pipeStream.Write(msg);
+            //Console.WriteLine(msgString);
+            if (isOutputConnected)
+            {
+                namedPipeServer.Write(msg);
+                //Program.pipeStream.Flush();
+                namedPipeServer.Flush();
+            }
+        }*/
 
         public async Task ServerRunning()
         {
-            await Task.WhenAll(tasks);
-         //   while (serverIsRunning)
-         //   {
-
-
-
-         //       await Task.Delay(1);
-         //   }
+            //Console.WriteLine(taskQueue.Count);
+            while (taskQueue.Count > 0)
+            {
+                Task task;
+                if (taskQueue.TryDequeue(out task))
+                {
+                    task.Wait();
+                }
+                await Task.Delay(1);//not sure if this is needed or not, but just in case so we don't have a wild 'while' running
+            }
+            //Console.WriteLine("done already?");
         }
 
         public async Task StartListening()
         {
             listener = TcpListener.Create(Config.config.port);
             listener.Start();
-            isListening = true;
-            //Console.WriteLine()
-            logFile.WriteLine($"{Config.config.gameName} {Config.config.gameName} listening on port {Config.config.port}");
-            ServerConsole.newConsole.WriteLine($"{Config.config.gameName} {Config.config.gameName} listening on port {Config.config.port}");
-            while (isListening)
+            //isListening = true;
+
+            while (doServerTasks)// isListening)
             {
                 try
                 {
-                    //TcpClient incomingClient = await listener.AcceptTcpClientAsync();
-                    //Console.WriteLine("waiting?");
-
-                    //check to see if we're on the login server or game servers?
                     //might need to add tcpclient to different lists, depending.
                     TcpClient incomingClient = await listener.AcceptTcpClientAsync();
-
+                    //Console.WriteLine("blah?");
                     //we need this here so the DoLogin has the player to interact with
                     Player newConnection = new Player();
-
+                    
                     //newConnection.Roundtime = new Timer(newConnection.EndRoundtime, newConnection, -1, -1);
                     //check if guid is used already?
                     //newConnection.Guid = Guid.NewGuid();
                     newConnection.Client = incomingClient;
+                    //newConnection.SendData("blah?");
                     newConnection.CurrentServer = this;
+                    newConnection.connectionStatus = Player.ConnectionStatus.Connecting;
                     //  newConnection.IP = incomingClient.Client.RemoteEndPoint.ToString();
                     //accountID and accountType are set on the player at successful login down in processMessage
                     //clientTask itself?
-
-                    ServerFunctions.SendData(newConnection, "052", $"gameName::{Config.config.gameName}");
+                    //Console.WriteLine("blah?");
+                    newConnection.SendData("052", $"gameName::{config.gameName}");
+                    //ServerFunctions.SendData(newConnection, "052", $"gameName::{Config.config.gameName}");
                     //ServerFunctions.SendData(newConnection, "doh!");
 
                     //don't wait for this to finish so we're not holding up the line for the next person for however long it takes for this person to get logged in
-                    ServerFunctions.DoLogin(newConnection);
+                    //ServerFunctions.DoLogin(newConnection);
 
                     //Connections tempConn = new Connections();
                     //tempConn.guid = Guid.NewGuid();//not sure I should put this here, was thinking of just having the guid on logged in characters, not accounts
@@ -489,24 +522,33 @@ namespace onnaMUD.MUDServer
                 }
                 catch (SocketException)// se)
                 {
-                    logFile.WriteLine("We have shut down the listener");
-                    isListening = false;
+                    Log("We have shut down the listener");
+                    break;
+                //    isListening = false;
                 }
                 catch (Exception ex)
                 {
-                    logFile.WriteLine($"Blah!? {ex.Message}");
-                    isListening = false;
+                    Log($"Blah!? {ex.Message}");
+                    break;
+                //    isListening = false;
                     //listener.Stop();
                 }
             }
 
         }
 
+        public async Task ServerTicks()
+        {
+
+
+
+        }
+
         public async Task RandomOutput()
         {
             Random rnd = new Random();
-            doRandom = true;
-            while (doRandom)
+            //doRandom = true;
+            while (doServerTasks)// doRandom)
             {
                 await Task.Delay(rnd.Next(10, 41) * 1000);//random interval between 1000 and 30000 milliseconds (1-30 seconds)
                 for (int i = 0; i < connections.Count; i++)
@@ -525,7 +567,7 @@ namespace onnaMUD.MUDServer
 
         public async Task CheckPlayerTimers()
         {
-            checkRTs = true;
+            //checkRTs = true;
 
             /*          while (checkRTs)
                       {
@@ -548,7 +590,7 @@ namespace onnaMUD.MUDServer
 
             //redo how timers are run/checked?
             //if (DateTime.UtcNow - startTime > breakDuration)
-            while (checkRTs)
+            while (doServerTasks)// checkRTs)
             {
                 for (int i = 0; i < playerTimers.Count; i++)
                 {
@@ -575,27 +617,6 @@ namespace onnaMUD.MUDServer
 
         }
 
-        public void RemoveCompiledDLLs(string commandDirectory)
-        {
-            String[] commandDLLs = Directory.GetFiles(commandDirectory, "*.dll", SearchOption.TopDirectoryOnly);
-
-            if (commandDLLs.Length > 0)
-            {
-                for (int i = 0; i < commandDLLs.Length; i++)
-                {
-                    File.Delete(commandDLLs[i]);
-                }
-                logFile.WriteLine("Command dlls removed from command directory prior to command compilation!");
-                //ServerConsole.newConsole.WriteLine("Command dlls removed from command directory prior to command compilation!");
-            }
-            else
-            {
-                logFile.WriteLine("There were no dlls present in the command directory to delete.");
-                //ServerConsole.newConsole.WriteLine("There were no dlls present in the command directory to delete.");
-            }
-
-        }
-
         /// <summary>
         /// Gather up all the scripts that are going to be compiled
         /// </summary>
@@ -606,7 +627,7 @@ namespace onnaMUD.MUDServer
             if (scriptsToLoad == "all")
             {
                 string[] allScripts = Directory.GetFiles(Path.Combine(Config.scriptDir, "all"), "*.cs", SearchOption.TopDirectoryOnly);
-                CompileCommands(allScripts, commandDir);
+   //             CompileCommands(allScripts, commandDir);
             }
             else
             {
@@ -648,11 +669,11 @@ namespace onnaMUD.MUDServer
                 }
                 //once we get through all the scripts
                 string[] scripts = files.ToArray();
-                CompileCommands(scripts, commandDir);
+  //              CompileCommands(scripts, commandDir);
                 //                CompileCommands()
             }
         }
-
+/*
         /// <summary>
         /// From the list of all scripts files to compile, do the actual compilation
         /// </summary>
@@ -739,148 +760,186 @@ namespace onnaMUD.MUDServer
 
             if (success > 0)
             {
-                logFile.WriteLine($"{success} commands compiled successfully");
+                Log($"{success} commands compiled successfully");
                 //ServerConsole.newConsole.WriteLine($"{success} commands compiled successfully");
             }
             if (fail > 0)
             {
-                logFile.WriteLine($"{fail} commands failed to compile");
+                Log($"{fail} commands failed to compile");
                 //ServerConsole.newConsole.WriteLine($"{fail} commands failed to compile");
             }
             //logFile.WriteLine($"{success} commands compiled successfully");
             //logFile.WriteLine($"{fail} commands failed to compile");
             //ServerConsole.newConsole.WriteLine($"{success} commands compiled successfully");
             //ServerConsole.newConsole.WriteLine($"{fail} commands failed to compile");
+        }*/
+
+        public void LoadAdminCommands()
+        {
+            int loadedCommands = 0;
+
+            Assembly currentAssembly = Assembly.GetCallingAssembly();
+            var exportedClasses = currentAssembly.GetExportedTypes().Where(p => typeof(ICommand).IsAssignableFrom(p) && p != typeof(ICommand));
+
+            foreach (var classType in exportedClasses)
+            {
+             //   if (classType.IsSubclassOf(typeof(ICommand)))
+             //   {
+                    //Log("blah");
+                    var foundClass = (ICommand)Activator.CreateInstance(classType);
+                    if (foundClass == null)
+                        continue;
+
+                    foreach (string alias in foundClass.Aliases)
+                    {
+                        Commands newCommand = new Commands();
+                        newCommand.commandClass = foundClass;
+                        newCommand.commandAlias = alias;
+                        //ServerConsole.newConsole.WriteLine(alias + " " + foundClass);
+                        adminCommands.Add(newCommand);
+                    }
+                    loadedCommands++;
+             //   }
+            }
+            if (adminCommands.Count > 0)
+            {
+                adminCommands = adminCommands.OrderBy(x => x.commandAlias).ToList();
+            }
+
+            Log($"{loadedCommands} admin commands loaded!");
+            Log($"{adminCommands.Count} total admin command aliases in list!");
+            consolePipe.SendToConsole($"{loadedCommands} admin commands loaded!");
+            consolePipe.SendToConsole($"{adminCommands.Count} total admin command aliases in list!");
         }
 
-        public void LoadCommandDLL(string serverDirectory)
+        public void LoadPluginDLL(string serverDirectory)
         {
-            //ServerConsole.newConsole.WriteLine("Start loading dll files...");
-            ConsoleOutput.SendConsole("Start loading dll files...");
+            int loadedCommands = 0;
 
-            var allFilenames = Directory.EnumerateFiles(serverDirectory).Select(p => Path.GetFileName(p));
-            var commandDLL = allFilenames.Where(fn => Path.GetExtension(fn) == ".dll").ToArray();
-            //   .Select(fn => Path.GetFileNameWithoutExtension(fn)).ToArray();
-
-            //      for (int i = 0; i < commandDLL.Length; i++)
-            //    {
-            //      ServerConsole.newConsole.WriteLine(commandDLL[i]);
-            // }
-            //ServerConsole.newConsole.WriteLine(commandDLL.Length);
-            //ServerConsole.newConsole.WriteLine("blah");
-            if (commandDLL.Length < 1)
+            if (Directory.EnumerateFiles(pluginDir).Count() > 0)
             {
-                //no files got loaded...
-                logFile.WriteLine("No command dlls loaded!");
-                //ServerConsole.newConsole.WriteLine("No command dlls loaded!");
-                return;
-            }
-            //not sure we need to do this, since after this function is done, the reference to the dll file is gone and all the commands are loaded into memory?
-            File.Copy(commandDLL[0], Path.Combine(serverDirectory, commandDLL[0] + ".loaded"), true);
+                //var allFilenames = Directory.EnumerateFiles(pluginDir).Select(p => Path.GetFileName(p));
+                var allDLLFiles = Directory.EnumerateFiles(pluginDir).Select(p => Path.GetFileName(p)).Where(fn => Path.GetExtension(fn) == ".dll").ToArray();
+                //Log($"{allDLLFiles.Length}");
+                //var commandDLL = allFilenames.Where(fn => Path.GetExtension(fn) == ".dll").ToArray();
 
-            //        String[] commandDLLFiles = Directory.GetFiles(dllDirectory, "*.dll", SearchOption.TopDirectoryOnly);
-            //        if (commandDLLFiles.Length == 0)
-            //            return;
+                //        String[] commandDLLFiles = Directory.GetFiles(dllDirectory, "*.dll", SearchOption.TopDirectoryOnly);
+                //        if (commandDLLFiles.Length == 0)
 
-            int loadedCommands = 0;//starting at 1 because of trial command, not anymore
-
-            Assembly comAssem = commandAssembly.LoadFromAssemblyPath(Path.Combine(serverDirectory, commandDLL[0] + ".loaded"));//load the dll file
-            Type[] dllClass = comAssem.GetExportedTypes();//get all the public classes from the loaded dll file
-
-            logFile.WriteLine($"Command dll for {Config.config.gameName} loaded!");
-            //ServerConsole.newConsole.WriteLine($"Command dll loaded!");
-            foreach (var classType in dllClass)
-            {
-                //ServerConsole.newConsole.WriteLine(classType);
-                var foundClass = (ICommand)Activator.CreateInstance(classType);
-                if (foundClass == null)
-                    continue;//if this is null, stop this loop and try the next
-
-                //this will be if we have multiple aliases from a command, add the class to each alias in the command list
-                //newCommand.commandClass = foundClass;
-                //string[] aliases = foundClass.Aliases;
-
-                foreach (string alias in foundClass.Aliases)
+                for (int i = 0; i < allDLLFiles.Length; i++)
                 {
-                    Commands newCommand = new Commands();
-                    newCommand.commandClass = foundClass;
-                    newCommand.commandAlias = alias;
-                    //ServerConsole.newConsole.WriteLine(alias + " " + foundClass);
-                    commandList.Add(newCommand);
+                    //Log($"{allDLLFiles[i]}");
+                    var dllFile = Assembly.LoadFile(Path.Combine(pluginDir, allDLLFiles[i]));
+                    Type[] dllClasses = dllFile.GetExportedTypes();
+                    //Log($"{dllClasses.Length}");
+                    foreach (var classType in dllClasses)
+                    {
+                        if (typeof(ICommand).IsAssignableFrom(classType))
+                        {
+                            //this class extends from ICommand interface?
+                            //Log($"{classType}");
+                            var commandClass = (ICommand)Activator.CreateInstance(classType);
+                            foreach (string alias in commandClass.Aliases)
+                            {
+                                Commands newCommand = new Commands();
+                                newCommand.commandClass = commandClass;
+                                newCommand.commandAlias = alias;
+                                commandList.Add(newCommand);
+                            }
+                            loadedCommands++;
+                        }
+                    }
                 }
-                loadedCommands++;
-            }
-            //loadedCommands++;
 
-            //ServerConsole.newConsole.WriteLine($"{commandDLLFiles.Length} dll files in directory!");
-            /*           for (int i = 0; i < commandDLLFiles.Length; i++)
-                       {
-                           //ServerConsole.newConsole.WriteLine($"Loading: {commandDLLFiles[i]}");
-                           //Assembly comAssem = commandAssembly.LoadFromAssemblyPath(commandDLLFiles[i]);
-                           //var executeType = comAssem.GetType("Execute");
-                           //Type[] dllClass = comAssem.GetExportedTypes();
+     /*           Assembly comAssem = commandAssembly.LoadFromAssemblyPath(Path.Combine(pluginDir, commandDLL[0]));//load the dll file
+                Type[] dllClass = comAssem.GetExportedTypes();//get all the public classes from the loaded dll file
 
-                           //Commands newCommand = new Commands();
-                           foreach (var classType in dllClass)
+                Log($"Command dll for {Config.config.gameName} loaded!");
+                //ServerConsole.newConsole.WriteLine($"Command dll loaded!");
+                foreach (var classType in dllClass)
+                {
+                    //ServerConsole.newConsole.WriteLine(classType);
+                    var foundClass = (ICommand)Activator.CreateInstance(classType);
+                    if (foundClass == null)
+                        continue;//if this is null, stop this loop and try the next
+
+                    //this will be if we have multiple aliases from a command, add the class to each alias in the command list
+                    //newCommand.commandClass = foundClass;
+                    //string[] aliases = foundClass.Aliases;
+
+                    foreach (string alias in foundClass.Aliases)
+                    {
+                        Commands newCommand = new Commands();
+                        newCommand.commandClass = foundClass;
+                        newCommand.commandAlias = alias;
+                        //ServerConsole.newConsole.WriteLine(alias + " " + foundClass);
+                        commandList.Add(newCommand);
+                    }
+                    loadedCommands++;
+                }*/
+                //loadedCommands++;
+
+                //ServerConsole.newConsole.WriteLine($"{commandDLLFiles.Length} dll files in directory!");
+                /*           for (int i = 0; i < commandDLLFiles.Length; i++)
                            {
-                               var foundClass = (ICommand)Activator.CreateInstance(classType);
-                               if (foundClass == null)
-                                   continue;//if this is null, stop this loop and try the next
+                               //ServerConsole.newConsole.WriteLine($"Loading: {commandDLLFiles[i]}");
+                               //Assembly comAssem = commandAssembly.LoadFromAssemblyPath(commandDLLFiles[i]);
+                               //var executeType = comAssem.GetType("Execute");
+                               //Type[] dllClass = comAssem.GetExportedTypes();
 
-                               //this will be if we have multiple aliases from a command, add the class to each alias in the command list
-                               //newCommand.commandClass = foundClass;
-                               foreach (string alias in foundClass.Aliases)
+                               //Commands newCommand = new Commands();
+                               foreach (var classType in dllClass)
                                {
-                                   Commands newCommand = new Commands();
-                                   newCommand.commandClass = foundClass;
-                                   newCommand.commandAlias = alias;
-                                   commandList.Add(newCommand);
+                                   var foundClass = (ICommand)Activator.CreateInstance(classType);
+                                   if (foundClass == null)
+                                       continue;//if this is null, stop this loop and try the next
+
+                                   //this will be if we have multiple aliases from a command, add the class to each alias in the command list
+                                   //newCommand.commandClass = foundClass;
+                                   foreach (string alias in foundClass.Aliases)
+                                   {
+                                       Commands newCommand = new Commands();
+                                       newCommand.commandClass = foundClass;
+                                       newCommand.commandAlias = alias;
+                                       commandList.Add(newCommand);
+                                   }
+
                                }
+                               //ServerConsole.newConsole.WriteLine(blah[0]);
+                               //newCommand.commandClass = (ICommand)Activator.CreateInstance(blah[0]);
+                               //newCommand.commandName = newCommand.commandClass.ToString().ToLower();
+                               //newCommand.commandClass.server = this;
+                               //dynamic commandInstance = Activator.CreateInstance(blah[0]);
+                               //commandList.Add(newCommand);// commandInstance.ToString().ToLower());
+                               //ServerMain.newConsole.WriteLine(commandInstance.ToString().ToLower());
+                               //commandInstance.server = this;
+                               //commandInstance.Execute();
+                               loadedCommands++;
+                           }*/
 
-                           }
-                           //ServerConsole.newConsole.WriteLine(blah[0]);
-                           //newCommand.commandClass = (ICommand)Activator.CreateInstance(blah[0]);
-                           //newCommand.commandName = newCommand.commandClass.ToString().ToLower();
-                           //newCommand.commandClass.server = this;
-                           //dynamic commandInstance = Activator.CreateInstance(blah[0]);
-                           //commandList.Add(newCommand);// commandInstance.ToString().ToLower());
-                           //ServerMain.newConsole.WriteLine(commandInstance.ToString().ToLower());
-                           //commandInstance.server = this;
-                           //commandInstance.Execute();
-                           loadedCommands++;
-                       }*/
+                //commandList.Sort();
+                //            foreach (Commands command in commandList)
+                //            {
+                //                ServerConsole.newConsole.Write(command.commandAlias);
+                //            }
+                commandList = commandList.OrderBy(x => x.commandAlias).ToList();//this will be the sort when we might actually have a class as the list instead of just string
 
-            //commandList.Sort();
-            //            foreach (Commands command in commandList)
-            //            {
-            //                ServerConsole.newConsole.Write(command.commandAlias);
-            //            }
-            commandList = commandList.OrderBy(x => x.commandAlias).ToList();//this will be the sort when we might actually have a class as the list instead of just string
-                                                                            //           for (int i = 0; i < commandList.Count; i++)
-                                                                            //           {
-                                                                            //               ServerMain.newConsole.WriteLine(commandList[i]);
+                Log($"{loadedCommands} commands loaded!");
+                Log($"{commandList.Count} total command aliases in list!");
+                consolePipe.SendToConsole($"{loadedCommands} commands loaded!");
+                consolePipe.SendToConsole($"{commandList.Count} total command aliases in list!");
 
-            //};
-            //            ServerConsole.newConsole.WriteLine("sorted");
-            //            foreach (Commands command in commandList)
-            //            {
-            //                ServerConsole.newConsole.Write(command.commandAlias);
-            //            }
-            logFile.WriteLine($"{loadedCommands} commands loaded into command list!");
-            logFile.WriteLine($"{commandList.Count} total command aliases in list!");
-            //ServerConsole.newConsole.WriteLine($"{loadedCommands} commands loaded into command list!");
-            //ServerConsole.newConsole.WriteLine($"{commandList.Count} total command aliases in list!");
-            //for (int i = 0; i < commandList.Count; i++)
-            // {
-            //   ServerConsole.newConsole.Write(commandList[i].commandAlias + " ");
-            // ServerConsole.newConsole.WriteLine();
-            // }
+            } else
+            {
+                Log("No plugin dlls loaded!");
+                consolePipe.SendToConsole("No plugin dlls loaded!");
+            }
         }
 
         public async Task CharacterLogoutTask()
         {
-            doLogouts = true;
-            while (doLogouts)//while true? maybe some other bool might be better here
+            //doLogouts = true;
+            while (doServerTasks)// doLogouts)//while true? maybe some other bool might be better here
             {
                 //Console.WriteLine("test");
                 //check tasks are 
@@ -896,7 +955,7 @@ namespace onnaMUD.MUDServer
                         //Console.WriteLine(connections[i].clientTask.Status.);
                         if (!ServerFunctions.IsClientStillConnected(connections[i].player))// connections[i].clientTask.Status != TaskStatus.WaitingForActivation && connections[i].clientTask.Status != TaskStatus.Running)// clientTasks[i].Status != TaskStatus.Running)//if the status of this task is not running (do we need to check for anything else? if it's anything else besides running, something's wrong?)
                         {//TaskStatus - only options for 'done' are Canceled, Faulted or RanToCompletion. 
-                            logFile.WriteLine($"{connections[i].player.IP} client disconnected.");
+                            Log($"{connections[i].player.IP} client disconnected.");
                             //TcpClient tempClient = clientTasks[i].
                             //see if we can get the remoteendpoint of socket after it's closed
                             //Console.WriteLine(connections[i].client.Client.RemoteEndPoint);
@@ -907,14 +966,6 @@ namespace onnaMUD.MUDServer
                             //Console.WriteLine("doh");
                         }
                     }
-                    //      }
-                    //      else
-                    //      {
-                    //Console.WriteLine("blahblah");
-                    //      }
-                    //Console.WriteLine("waiting");
-                    //Thread.Sleep(1000);//pause for 1 second every loop
-                    //await Task.Delay(1000);
                 }
                 else
                 {
@@ -933,24 +984,6 @@ namespace onnaMUD.MUDServer
             string commandToCheck = message[0].ToLower();
             ICommand? command = null;
 
-            //if (!Temps.CheckLists(player, message))
-            //  return;
-
-            //I REALLY NEED TO REWORK THIS TO GET THE > COMMAND PROMPT TO SHOW CORRECTLY...I think I have?
-
-            //           if (commandList.Count == 0)
-            //           {
-            //no commands in list so obviously there's going to be no match
-            //               ServerFunctions.SendData(player, "<br>Unknown command.");
-            //ServerFunctions.SendData(player, ">");
-            //               return;
-            //           }
-            //ServerFunctions.SendData(player, $"({commandToCheck})");
-            //for (int i = 0; i < commandList.Count; i++)
-            // {
-            //   ServerConsole.newConsole.Write(commandList[i] + " ");
-            // ServerConsole.newConsole.WriteLine();
-            // }
             //first check: check if message[0] matches any full command from list: ie, seeing if any of the specific shortened aliases are the first message
             //examples: ' for say, n,e,s,w,ne,se,sw,nw for move (direction), etc.
 
@@ -1074,7 +1107,7 @@ namespace onnaMUD.MUDServer
                 if (connections[i].player == player)// client == client)
                 {
                     //client.Close();
-                    logFile.WriteLine($"{player.IP} {player.character.Name} logged out!");// connections[i].account.AccountName} logged out!");
+                    Log($"{player.IP} {player.character.Name} logged out!");// connections[i].account.AccountName} logged out!");
                     connections.RemoveAt(i);
 
                 }
@@ -1097,7 +1130,7 @@ namespace onnaMUD.MUDServer
             {//if the player guid is not empty (not disconnected) and player guid and message guid don't match, wrong
                 //if the player guid is empty (disconnected), wrong
                 ServerFunctions.SendData(player, "<br>Invalid login. Please disconnect and retry login.");
-                logFile.WriteLine("Somebody is connected with an empty guid!");
+                Log("Somebody is connected with an empty guid!");
                 return;
             }
 
@@ -1127,36 +1160,9 @@ namespace onnaMUD.MUDServer
 
             switch (code)
             {
-                /*  case "000"://don't need this anymore since all the 'servers' are on the same process
-                      logFile.WriteLine($"000 message from {connections[connectionIndex].clientIP}");
-                      //game server connecting to login and sending auth string
-                      //or login server sending game server their new guid
-                      if (serverType == "login")
-                      {//game server connecting to this login server
-                          //string? gameServer = Config.instance.CheckServerName(splitMessage[3]);
-                          if (splitMessage[4] == Config.instance.ConfigInfo("auth") && gameServer != null)
-                          {
-                              logFile.WriteLine("auth message matched!");
-                              Guid tempGuid = Guid.NewGuid();
-                              //SetClientGuid(client, tempGuid);
-  //                            SendData(clientGUID, "000", tempGuid.ToString());//removed serverguid
-                          }
-                          else
-                          {
-                              //auth message doesn't match so we need to shut down this connection
-
-                          }
-                      }
-                      else//this is a game server getting a guid from login
-                      {
-                          serverGuid = new Guid(splitMessage[3]);
-
-                      }
-                      break;*/
-
                 case "050"://user login from frontend client
                     //find match to splitMessage[1] in login account database here
-                    logFile.WriteLine(player.IP + " connected!");//Remote, on this socket which is both ends, look at the far end of the connection, from the server point of view
+                    Log(player.IP + " connected!");//Remote, on this socket which is both ends, look at the far end of the connection, from the server point of view
                     //logFile.WriteLine(connections[connectionIndex].clientIP + " connected!");//Remote, on this socket which is both ends, look at the far end of the connection, from the server point of view
                     //Console.WriteLine(client.Client.RemoteEndPoint);
                     ServerFunctions.SendData(player, "<br>Connected! Logging in...", false);// clientGUID, "Connected! Logging in...");//removed serverguid
@@ -1168,7 +1174,7 @@ namespace onnaMUD.MUDServer
 
                     if (message == " ")
                     {//we sent a " " blank account name. new user?
-                        logFile.WriteLine(player.IP + " sent a \' \' account name. possible new user?");
+                        Log(player.IP + " sent a \' \' account name. possible new user?");
                         //logFile.WriteLine(connections[connectionIndex].clientIP + " sent a \' \' account name. possible new user?");
                         //SetClientAccountName(connections[connectionIndex].client, splitMessage[2]);//why would we set the account name to ' ' in the first place?
                         ServerFunctions.SendData(player, "<br>You are trying to login with a blank account name. Either it was an accident or you're a new user. If so, would you like to start a trial account?<br>(If you would like to start a new trial account, please <link=\"clicklink trialstart\">click here</link>, or for more information: <link=\"clicklink trialinfo\">click here</link>)", false);//  type TRIAL START or TRIAL INFO for more information.)");
@@ -1177,20 +1183,20 @@ namespace onnaMUD.MUDServer
                     }
                     if (loginAccount.AccountName == "moo")//default name, obviously new account
                     {//unknown account name. also possible new user?
-                        logFile.WriteLine(player.IP + " " + message + " unknown account name!");
+                        Log(player.IP + " " + message + " unknown account name!");
                         //SetClientAccountName(connections[connectionIndex].client, splitMessage[2]);// somehow get the account name they sent to the new trial bit?
                         ServerFunctions.SendData(player, "<br>Unknown account. Either disconnect and check for typos or would you like to start a trial account?<br>(If you would like to start a new trial account, please <link=\"clicklink trialstart\">click here</link>, or for more information: <link=\"clicklink trialinfo\">click here</link>)\"", false); // type TRIAL START or TRIAL INFO for more information.)");
                         return;
                     }
                     if (message.Length < 8)
                     {//invalid account name
-                        logFile.WriteLine(player.IP + " " + message + " invalid account name!");
+                        Log(player.IP + " " + message + " invalid account name!");
                         ServerFunctions.SendData(player, "<br>Cannot login: invalid account name. How did you even accomplish that?", false);
                         return;
                     }
                     if (!Config.Verify(splitMessage[3], loginAccount.HashedPassword))// loginDT.Rows[0]["hashedPassword"].ToString()))
                     {//password doesn't match
-                        logFile.WriteLine(player.IP + " " + message + " incorrect password.");
+                        Log(player.IP + " " + message + " incorrect password.");
                         //ServerFunctions.SendData(player, splitMessage[3]);
                         ServerFunctions.SendData(player, "<br>Incorrect password. Please disconnect, check your password for typos and try again.", false);
                         return;
@@ -1198,13 +1204,15 @@ namespace onnaMUD.MUDServer
                     // if (loginAccount != null)// loginDT.Rows.Count > 0)
                     // {
                     //we already did a check for the default name so this is a matched account
-                    logFile.WriteLine(player.IP + " " + message + " logged in!");
+                    Log(player.IP + " " + message + " logged in!");
                     ServerFunctions.SendData(player, "052", $"account::{message}");
                     player.AccountType = loginAccount.AccountType;
                     //loginAccount.Id is the account Id, the player.Id is the Id for the character they might choose to play
                     // so we need to set the loginAccount.Id to the player's AccountId, not the player.Id
                     //since the AccountId is what we're checking in DoLogin to see if we've connected with a valid account or not (ie, if they're going through the new account process)
                     player.AccountID = loginAccount.Id;
+                    player.SendData("<br>Logged in!", false);
+                    player.connectionStatus = Player.ConnectionStatus.CharacterSelect;
                     //SetClientAccount(clientGUID, loginAccount);//we're logged in so set the connection account to the matched account     connections[connectionIndex].client, splitMessage[2]);
                     //ServerFunctions.SendData(player, "Logged in!<br>");//adding an additional br to the one we always add on the frontend so we skip a line
 
@@ -1298,68 +1306,161 @@ namespace onnaMUD.MUDServer
 
                     //ServerMain.conn.Close();
                     break;
-                case "055":
-                    //frontend to server - send new account info to verify (check account name and passwords)
-                    //player.tempScript.Check(player, splitMessage[2], splitMessage[3], splitMessage[4]);
-                    //moved this to 105 clicklink trialverify and trialconfirm
 
-                    /*                   string tempAccountName = splitMessage[2];
-                                       string tempPassword1 = splitMessage[3];
-                                       string tempPassword2 = splitMessage[4];
-
-                                       //do verification checks
-                                       if (tempAccountName.Length < 8)
-                                       {
-                                           ServerFunctions.SendData(player, "Your account name needs to be at least 8 characters long. Please try again.");
-                                           //break;
-                                           return;
-                                       }
-                                       bool isUsedAccountName = DB.DBAccess.CheckAccountName(tempAccountName);
-
-                                       if (isUsedAccountName)
-                                       {
-                                           //name found, can't use
-                                           ServerFunctions.SendData(player, $"{tempAccountName} is not a valid new account name. Please choose another one.");
-                                           //break;
-                                           return;
-                                       }
-                                       if (tempPassword1 != tempPassword2)
-                                       {
-                                           //if the two entered passwords don't match
-                                           ServerFunctions.SendData(player, "Your entered passwords don't match. Please re-enter them.");
-                                           //break;
-                                           return;
-                                       }
-
-                                       //if we got to this point, account name is acceptable and passwords match
-                   //                    Account = name;
-                   //                    Password = password1;
-                                       //                    ServerFunctions.SendData(player, "054", "close");//don't close this just yet, they have to hit 'confirm'
-                                       ServerFunctions.SendData(player, "You have picked a valid account name and your passwords match. If you would like to use these as your login, please click the 'confirm' button.");// type TRIAL ACCEPT or if you want to redo these, type TRIAL REDO");
-                                       ServerFunctions.SendData(player, "060", "trialconfirm::open");*/
-                    break;
                 case "100"://command sent from user to server
                     //this gets added to queue
-                    logFile.WriteLine($"{player.IP}: \"{message}\"");
-                    //echo command back to player, no?
-                    //ServerFunctions.SendData(player, $">{message}");
-
-                    //check player.tempScript somehow?
-                    //                   if (player.tempScript != null)
-                    //                   {
-                    //player.tempScript.MakeNewTrial(player); //doesn't error out, at least
-                    //                   }
-                    //SendData(client, serverGuid, "110", "Message received...");
-                    //SendData(client, serverGuid, "092", "blah");//works!!!
+                    Log($"{player.IP}: \"{message}\"");
                     ServerFunctions.AddCommandToQueue(player, message);
-                    //CommandQueue commandTyped = new CommandQueue();
-                    //commandTyped.player = player;
-                    //commandTyped.commandMessage = message;
-                    //commandQueue.Add(commandTyped);
-                    //                    DoCommand(player, message);//  clientGUID, splitMessage[2]);//'client' will need to be changed to user guid at some point
                     break;
 
                 case "105":
+                    //clicked hyperlinks from front-end
+                    string[] clickedLink = message.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                    //let's get the first word/guid from the clicked link
+                    switch (clickedLink[0])
+                    {
+                        case "charselect":
+                            if (player.connectionStatus == Player.ConnectionStatus.CharacterSelect)
+                            {
+                                int selectedChar = 0;
+                                List<Character> characterList = DB.DBAccess.GetCharacters(player, Config.config.gameName);
+
+                                if (Int32.TryParse(clickedLink[1], out selectedChar))
+                                {
+                                    //already created character
+                                    if (selectedChar > -1 && selectedChar < characterList.Count)
+                                    {
+                                        player.character = characterList[selectedChar];
+                                        player.SendData("052", $"character::{player.character.Name}");
+                                        //ServerFunctions.SendData(player, "052", $"character::{player.character.Name}");
+                                        //if somehow, current room is guid.empty, move them to first room? which should be char creation. but if they have
+                                        //a name, they should be moved to room that charcreation drops them into, once we get to that point of course
+                                        //ServerFunctions.SendData(player, player.CurrentRoom.ToString(), false);
+                                        if (player.character.CurrentRoom == Guid.Empty)
+                                        {
+                                            //ServerFunctions.SendData(player, "moo?");
+                                            Room charGen = ServerFunctions.GetRoom(player, Config.config.FirstRoom);// player.CurrentServer.serverInfo.FirstRoom);
+                                            //Room charGen = DB.DBAccess.GetById<Room>(player.CurrentServer.firstRoom, DB.Collections.Room);//  ServerFunctions.servers[chosenServer].firstRoom, DB.Collections.Room);
+                                            //ServerFunctions.SendData(player, "moo?");
+                                            ServerFunctions.AddCommandToQueue(player, $"move {charGen.Id}");
+                                            //Region charReg;
+                                            //      ServerFunctions.SendData(player, "moo?");
+                                            //    for (int i = 0; i < ServerFunctions.servers.Count; i++)
+                                            //  {
+                                            //    ServerFunctions.SendData(player, ServerFunctions.servers[i].connections.Count.ToString());
+                                            // }
+                                            //ServerFunctions.SendData(player, "no region,or not instanced");
+                                            //player.CurrentRoom = player.CurrentServer.firstRoom;
+                                        }
+                                        player.connectionStatus = Player.ConnectionStatus.Connected;
+                                    }
+
+
+                                } else
+                                {
+                                    if (clickedLink[1] == "new")
+                                    {
+                                        //new character
+                                        //get the first room from the server info
+                                        player.character = new Character();
+                                        Room charGen = DB.DBAccess.GetById<Room>(Config.config.FirstRoom, DB.Collections.Room);//  ServerFunctions.servers[chosenServer].firstRoom, DB.Collections.Room);
+                                        ServerFunctions.SendData(player, "moo?");
+                                        ServerFunctions.AddCommandToQueue(player, $"move {charGen.Id}");
+                                        //ServerFunctions.SendData(player, "no region,or not instanced");
+                                        //     player.CurrentRoom = player.CurrentServer.firstRoom;// ServerFunctions.servers[chosenServer].firstRoom;
+                                        player.tempScript = new CharManager(player, player);
+                                        ServerFunctions.AddCommandToQueue(player, "look");
+                                        player.connectionStatus = Player.ConnectionStatus.CharacterCreation;
+                                    }
+
+                                }
+                                //player.connectionStatus = Player.ConnectionStatus.Connected;
+                                return;
+
+                        /*        //try to convert splitLink[2], ie: the select char option to an int
+                                if (!Int32.TryParse(clickedLink[1], out selectedChar))
+                                {
+                                    ServerFunctions.SendData(player, "<br>An error occured. Please select a character.", false);
+                                    ServerFunctions.ShowCharSelection(player);
+                                    return;
+                                }
+                                //put check to see if we're at max character count here?
+                                //to see if 'new character' is a valid option or not
+
+                                if (selectedChar > -1 && selectedChar < characterList.Count)
+                                {
+                                    // if we got the option clicked (greater than -1) and it's less than the char.count
+                                    //since 0-3 is less than count of 4
+                                    //load character and all that stuff
+                                    //or new character
+                                    if (characterList[selectedChar].Id != Guid.Empty)
+                                    {
+                                        //if this is an already created character
+                                        //we already have the Character class for this character loaded in the list so we just need to copy it to the player
+                                        //ServerFunctions.UpdateCharOnPlayer(player, characterList[option]);
+                                        //testing
+                                        //player = (Player)characterList[option];
+                                        //ServerFunctions.SendData(player, $"testing: {player.Guid.ToString()},{player.AccountType},{player.Name}");
+                                        player.character = characterList[selectedChar];
+                                        //ServerFunctions.UpdateObject(player, characterList[option]);
+                                        //player.character = characterList[option];
+
+                                        //player.tempScript = null;
+                                        player.SendData("052", $"character::{player.character.Name}");
+                                        //ServerFunctions.SendData(player, "052", $"character::{player.character.Name}");
+                                        //if somehow, current room is guid.empty, move them to first room? which should be char creation. but if they have
+                                        //a name, they should be moved to room that charcreation drops them into, once we get to that point of course
+                                        //ServerFunctions.SendData(player, player.CurrentRoom.ToString(), false);
+                                        if (player.character.CurrentRoom == Guid.Empty)
+                                        {
+                                            //ServerFunctions.SendData(player, "moo?");
+                                            Room charGen = ServerFunctions.GetRoom(player, Config.config.FirstRoom);// player.CurrentServer.serverInfo.FirstRoom);
+                                            //Room charGen = DB.DBAccess.GetById<Room>(player.CurrentServer.firstRoom, DB.Collections.Room);//  ServerFunctions.servers[chosenServer].firstRoom, DB.Collections.Room);
+                                            //ServerFunctions.SendData(player, "moo?");
+                                            ServerFunctions.AddCommandToQueue(player, $"move {charGen.Id}");
+                                            //Region charReg;
+                                            //      ServerFunctions.SendData(player, "moo?");
+                                            //    for (int i = 0; i < ServerFunctions.servers.Count; i++)
+                                            //  {
+                                            //    ServerFunctions.SendData(player, ServerFunctions.servers[i].connections.Count.ToString());
+                                            // }
+                                            //ServerFunctions.SendData(player, "no region,or not instanced");
+                                            //player.CurrentRoom = player.CurrentServer.firstRoom;
+                                        }
+
+                                        //ServerFunctions.SendData(player, $"Selected option #{menuOption}");
+                                        //var character = DB.DBAccess.GetById<Character>(characterList[menuOption - 1].Id, DB.Collections.Character);
+                                        //player = (Player)character;//  JsonConvert.DeserializeObject<Character>(JsonConvert.SerializeObject(data));
+                                        //ServerFunctions.SendData(player, $"{(Races)character.Race}");
+                                        //ServerFunctions.AddCommandToQueue(player, "look");//this added to end of 'move' command so we always look after a move
+                                    }
+                                    else
+                                    {
+                                        //new character
+                                        //get the first room from the server info
+                                        Room charGen = DB.DBAccess.GetById<Room>(Config.config.FirstRoom, DB.Collections.Room);//  ServerFunctions.servers[chosenServer].firstRoom, DB.Collections.Room);
+                                        ServerFunctions.SendData(player, "moo?");
+                                        ServerFunctions.AddCommandToQueue(player, $"move {charGen.Id}");
+                                        //ServerFunctions.SendData(player, "no region,or not instanced");
+                                        //     player.CurrentRoom = player.CurrentServer.firstRoom;// ServerFunctions.servers[chosenServer].firstRoom;
+                                        player.tempScript = new CharManager(player, player);
+                                        ServerFunctions.AddCommandToQueue(player, "look");
+                                    }
+                                    player.connectionStatus = Player.ConnectionStatus.Connected;
+                                    return;
+
+                                }
+                                else
+                                {
+                                    ServerFunctions.SendData(player, "An error occured. Please select a character.");
+                                    ServerFunctions.ShowCharSelection(player);
+                                    //return;
+                                }*/
+                            }
+                            break;
+
+                    }
+
                     //ServerFunctions.SendData(player, $"Link id {message} clicked!");
                     //this gets added to queue
                     //do checks to see if the incoming clicked link is a command or an item/object reference?
@@ -1372,7 +1473,7 @@ namespace onnaMUD.MUDServer
 
                         switch (splitLink[1])//since splitLink[0] is "clicklink"
                         {
-                            case "charselect":
+                       /*     case "charselect":
                                 List<Character> characterList = DB.DBAccess.GetCharacters(player, Config.config.gameName);
                                 //try to convert splitLink[2], ie: the select char option to an int
                                 if (!Int32.TryParse(splitLink[2], out option))
@@ -1455,12 +1556,13 @@ namespace onnaMUD.MUDServer
                                     ServerFunctions.ShowCharSelection(player);
                                     //return;
                                 }
-                                break;
+                                break;*/
 
                             case "trialstart":
                                 ServerFunctions.SendData(player, "Thank you for wanting to give this game a try! In order to get your trial account set up, please set your account name and password in the provided window.");
                                 ServerFunctions.SendData(player, "052", "newaccount::open");
                                 ServerFunctions.SendData(player, "052", "trialconfirm::close");
+                                player.connectionStatus = Player.ConnectionStatus.NewTrialSetup;
                                 break;
                             case "trialnewcancel":
                                 ServerFunctions.SendData(player, "Well, we're sad to see that you decided to not try our game but if you change your mind, please come on back.");
@@ -1541,6 +1643,7 @@ namespace onnaMUD.MUDServer
                                     DB.DBAccess.Save(account, DB.Collections.Account);
                                     //player.tempScript = null;
                                     player.AccountID = account.Id;
+                                    player.connectionStatus = Player.ConnectionStatus.CharacterSelect;
                                     //}
                                 }
 
@@ -1558,42 +1661,6 @@ namespace onnaMUD.MUDServer
                         ServerFunctions.AddCommandToQueue(player, message);
                     }
 
-
-                    //                   if (message.StartsWith("choose"))//since we're still dealing with "choose 1" or "choose blahblahblah" as the full string, not spaced out yet
-                    //                   {//this is a command, so we can just send it on as a command. don't need to add anything to it
-                    //                       ServerFunctions.AddCommandToQueue(player, message);
-                    //CommandQueue commandClick = new CommandQueue();
-                    //commandClick.player = player;
-                    //commandClick.commandMessage = message;
-                    //commandQueue.Add(commandClick);
-                    //  DoCommand(player, message);
-                    //break;
-                    //                   }
-
-
-                    /*          switch (message)
-                              {
-                                  case "newcharacter":
-                                      //check firstRoom
-                                      Room charGen = DB.DBAccess.GetById<Room>(firstRoom, DB.Collections.Room);
-                                      //Region charReg;
-                                      if (charGen.Region != Guid.Empty)
-                                      {
-                                          Region charReg = DB.DBAccess.GetById<Region>(charGen.Region, DB.Collections.Region);
-                                          if (charReg != null && charReg.IsInstanced)
-                                          {
-                                              ServerFunctions.SendData(player, "this is a region instance");
-
-                                              break;
-                                          }
-                                      }
-
-                                      ServerFunctions.SendData(player, "no region,or not instanced");
-                                      player.CurrentRoom = firstRoom;
-                                      break;
-
-
-                              }*/
                     break;
 
                 case "10000"://user forcing a disconnect with their 'disconnect' button, not the same as doing a /logout
@@ -1604,25 +1671,41 @@ namespace onnaMUD.MUDServer
                     //Thread.Sleep(1000);
                     break;
                 default:
-                    logFile.WriteLine($"{player.IP} unknown message code: {code}");
+                    Log($"{player.IP} unknown message code: {code}");
                     break;
             }
             //Console.WriteLine("message processed?");
         }
 
+        public async Task CheckQueueForCommands()
+        {
+            //ServerConsole.newConsole.WriteLine("command queue task is started?");
+            //checkQueue = true;
+            while (doServerTasks)// checkQueue)
+            {
+                if (CommandsInQueue())// && serverIsRunning)
+                {
+                    DoCommand(commandQueue[0].player, commandQueue[0].commandMessage);
+                    commandQueue.RemoveAt(0);
+                }
+                await Task.Delay(1);//even this smallest wait will slow down the while loop, hopefully
+            }
+        }
+
         public void StopServer()
         {
-            //         if (serverType == "login")//don't need this since 'game' servers now handle their own listeners
-            //           {//if the type is login
-            //stop the listener
-            //disconnect clients
-            //'logout' characters ie: RemoveConnection()
+            //turn off the task bools first so any loops in tasks don't keep going
+            doServerTasks = false;
+            //serverIsRunning = false;
+            waitForPipeClient = false;
+            readFromPipe = false;
+
             try
             {
                 //ServerConsole.newConsole.WriteLine("login listener stopped?");
                 listener.Stop();
                 listenerTask.Wait();
-                logFile.WriteLine("listenertask is done");
+                //Log("listenertask is done");//exceptions from shutting down listener will send to log
             }
             catch (SocketException)
             {
@@ -1630,11 +1713,7 @@ namespace onnaMUD.MUDServer
                 //there were people trying to connect when we closed the listener
             }
 
-            //ServerConsole.newConsole.WriteLine(connections.Count);
-            //if (connections.Count > 0)
-            //{//start at the end and go back?
-            //ServerConsole.newConsole.WriteLine("disconnecting players?");
-            logFile.WriteLine($"Disconnecting {connections.Count} players...");
+            Log($"Disconnecting {connections.Count} players...");
             for (int i = connections.Count - 1; i >= 0; i--)
             {
                 //ServerConsole.newConsole.WriteLine(connections[i].player.AccountID);
@@ -1642,10 +1721,13 @@ namespace onnaMUD.MUDServer
                 ServerFunctions.SendData(connections[i].player, "10000", "You have been booted from the server due to the server shutting down. Please reconnect later. Thank you.");//  connections[i].client, "10000", "goodbye");//removed serverguid
                 connections.RemoveAt(i);
             }
-            //}
-            doLogouts = false;
-            checkRTs = false;
-            doRandom = false;
+            //serverIsRunning = false;
+            //doLogouts = false;
+            //checkRTs = false;
+            //doRandom = false;
+            //waitForPipeClient = false;
+            //readFromPipe = false;
+            //isListening = false;
             logoutTask.Wait();
             roundtimeCheck.Wait();
             //randomOutput.Wait();
@@ -1654,24 +1736,12 @@ namespace onnaMUD.MUDServer
             commandList.Clear();
             //newTrialAccounts.Clear();
             commandQueue.Clear();
-            commandAssembly.Unload();
-
-            //commandAssembly.Assemblies);
-            //                commandAssembly.Unload();//shouldn't need this for login server
-            //ServerConsole.newConsole.WriteLine(commandAssembly.Name);
-            commandAssembly = null;
-            //ServerConsole.newConsole.WriteLine(commandAssembly.Name);
-            //         }
-            //         else
-            //         {//for game servers
-
-
-
-            //         }
-            //ServerConsole.newConsole.WriteLine("doh?");
-            //logFile.WriteLine($"lists are cleared");
-            logFile.Close();
             serverIsRunning = false;
+            //           commandAssembly.Unload();
+            //           commandAssembly = null;
+            Log("Server has been shut down.");
+            logFile.Close();
+            //serverIsRunning = false;
         }
 
         public bool CommandsInQueue()

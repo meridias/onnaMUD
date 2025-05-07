@@ -36,3 +36,12 @@ JsonIgnore is to ignore variables when serializing to a json string
 change Player class to not be an extension of Character, just put a Thing (or just Character) variable in Player class
 Character class is for all player characters and NPCs (all NPC characters AND hostile mobs)
 have a NPC class for NPC behavior(s) when not being run by an admin (shopkeeps, guildleaders, etc. and hostile mobs)
+
+in the onnaMUD-Core project file: (backup just in case, removing the codeanalysis)
+  <ItemGroup>
+    <PackageReference Include="LiteDB" Version="5.0.17" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.9.2" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="7.0.17" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+    <PackageReference Include="System.Data.SQLite" Version="1.0.118" />
+  </ItemGroup>

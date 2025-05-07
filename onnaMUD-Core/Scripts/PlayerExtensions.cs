@@ -20,7 +20,7 @@ namespace onnaMUD.Characters
 
                     break;
                 case Player.ConnectionStatus.Connecting:
-                    player.Guid = Guid.NewGuid();
+                    player.Guid = Guid.NewGuid();//do we really need this?
                     //newConnection.Client = incomingClient;
                     player.IP = player.Client.Client.RemoteEndPoint.ToString();//  incomingClient.Client.RemoteEndPoint.ToString();
                     player.ClientTask = ConnectedClient(player);//this is the task that checks for incoming data from the frontend
@@ -31,8 +31,12 @@ namespace onnaMUD.Characters
                     //send the created session guid to the player
                     player.SendData("052", $"guid::{player.Guid.ToString()}");
                     break;
-                case Player.ConnectionStatus.CheckingAccount:
-
+                case Player.ConnectionStatus.NewTrialSetup:
+                    break;
+                case Player.ConnectionStatus.CharacterSelect:
+                    ServerFunctions.ShowCharSelection(player);
+                    break;
+                case Player.ConnectionStatus.Connected:
                     break;
 
             }

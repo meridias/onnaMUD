@@ -1,0 +1,14 @@
+
+050 = user login from frontend
+052 = server to frontend - misc front-end messages (not output to user): logged-in account name, open edit windows, etc.
+
+090 = server to client, add clickable link
+092 = server to client, remove clickable links
+100 = command sent from client to server
+105 = clicked hyperlink from client (including new account info)
+110 = standard window output on client
+111 = server to client, room name (whole line highlight)
+
+nope 120 = sending info for editing from server to client
+
+10000 = user logout request

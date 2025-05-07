@@ -10,7 +10,7 @@ using onnaMUD.BaseClasses;
 using Newtonsoft.Json;
 using onnaMUD.Settings;
 //using static onnaMUD.Utilities.ServerConsole;
-using Microsoft.CodeAnalysis.CSharp.Syntax;
+//using Microsoft.CodeAnalysis.CSharp.Syntax;
 using System.Reflection;
 
 public class Edit : ICommand

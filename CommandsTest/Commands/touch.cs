@@ -5,7 +5,7 @@ using onnaMUD.Utilities;
 using onnaMUD.BaseClasses;
 //using onnaMUD.Accounts;
 using System.Diagnostics.CodeAnalysis;
-using Microsoft.CodeAnalysis.CSharp.Syntax;
+//using Microsoft.CodeAnalysis.CSharp.Syntax;
 //using onnaMUD.Rooms;
 
 public class Touch : ICommand

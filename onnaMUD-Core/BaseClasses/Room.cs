@@ -28,6 +28,7 @@ namespace onnaMUD.BaseClasses
         public Directions Directions { get; set; } = new();
         public List<RoomObject> Objects { get; set; } = new();//all the permanent objects in this room
 
+
         [BsonIgnore]//, JsonIgnore]
         public List<Thing> StuffInRoom { get; set; } = new();//all the NPCs, Players, Items and Objects in the room for the 'You also see', or is it 'Also here:'? or is that just players?
 

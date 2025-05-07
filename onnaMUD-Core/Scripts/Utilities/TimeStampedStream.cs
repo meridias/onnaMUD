@@ -18,8 +18,6 @@ class TimeStampedStream : StreamWriter
     {
         //fileCreated = true;
         //logFile = logFileName;
-
-
     }
 
     public override void WriteLine(string message)
@@ -34,13 +32,5 @@ class TimeStampedStream : StreamWriter
         base.Write(String.Format("{0} {1}", DateTime.Now.ToString("HH:mm:ss"), message));
     }
 
-    private void SendToConsole(string message)
-    {
-        if (ServerConsole.newConsole != null)
-        {
-            ServerConsole.newConsole.WriteLine(message);
-        }
-
-
-    }
 }
+

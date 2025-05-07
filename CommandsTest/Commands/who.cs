@@ -26,11 +26,12 @@ public class Who : ICommand
         if (player.AccountType >= AccountType.Mod)
         {
             //if mod or admin, show everybody on all servers
-            for (int i = 0; i < ServerFunctions.servers.Count; i++)
-            {
-                outputString += $"<br>Number of players on {Config.config.gameName} server: {ServerFunctions.servers[i].connections.Count}";
+            //     for (int i = 0; i < ServerFunctions.servers.Count; i++)
+            //     {
+            //outputString += $"<br>Number of players on {Config.config.gameName} server: {ServerFunctions.servers[i].connections.Count}";
+            outputString += $"<br>Number of players on server: {server.connections.Count}";
                 //ServerFunctions.SendData(player, $"Number of players on {ServerFunctions.servers[i].serverName} ({ServerFunctions.servers[i].serverType}) server: {ServerFunctions.servers[i].connections.Count}");
-            }
+       //     }
             //return;
         } else
         {

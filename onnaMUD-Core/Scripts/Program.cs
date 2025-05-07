@@ -18,6 +18,8 @@ using onnaMUD.Database;
 using System.IO.Pipes;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion.Internal;
 using onnaMUD.Characters;
+using System.IO;
+using System.Collections.Concurrent;
 
 namespace onnaMUD
 {
@@ -29,10 +31,10 @@ namespace onnaMUD
         //static public SQLiteConnection conn;
         //static public List<Server> servers = new List<Server>();
 
-        static public string consoleDir = "";
-        static private TextWriter? mainErrorLog;
+//        static public string consoleDir = "";
+//        static private TextWriter? mainErrorLog;
 //        static public StreamWriter? newConsole;
-        static public bool checkQueue = false;
+        //static public bool checkQueue = false;
         static private List<Task> tasks = new List<Task>();
         //        static private Task? commandTask;
         //        static private Task? consoleTask;
@@ -40,123 +42,357 @@ namespace onnaMUD
         static string exeFilename = "";
         //static string pipeName = "onnaMUDPipe";
         //static TaskCompletionSource<bool> isOutputConnected = new TaskCompletionSource<bool>(false);
-        static Task? serverTask;
+        static Task? programTask;
         //static Task? pipeRead = null;
         //static public Stream? pipeStream = null;
         //static private bool readFromPipe = false;
-        static ConsoleOutput? output = null;
+        //static ConsoleOutput? output = null;
+
+        private static ConcurrentQueue<Task> processQueue = new ConcurrentQueue<Task>();
+        //public static ProcessPrimary primaryClass = null!;
+        public static ServerMain server = null!;
+        //public static ConsoleOutput console = null!;// = new ConsoleOutput(processPipe);
+        public static ProcessPipe processPipe = null!;
+        //private static StreamWriter? streamError = null;
+        //private static bool isServer = false;
 
         static async Task Main(string[] args)
         {
-            bool isConsole = false;//this means that this process is going to be the server console
-            bool isServerStart = false;
+            if (!Config.LoadConfig())
+            {
+                Console.ReadKey();
+                //await Task.Delay(3000);
+                return;//if we had to create a new appsettings.json file, exit so user can edit file as needed
+            }
+
+            //bool isServerStartedAlready = await output.ConnectToPipeServer();
+
+            //bool isConsole = false;//this means that this process is going to be the server console
+            //bool isServerStart = false;
             //    string[] allArgs = Environment.GetCommandLineArgs();//this gets all command line args, including the executed filename
             exeFilename = Process.GetCurrentProcess().MainModule.FileName;// allArgs[0];//index 0 is the filename of the executed program
-
+            //Console.WriteLine(args.Length);
             if (args.Length > 0)
             {
+                //Console.WriteLine(args[0]);
                 for (int i = 0; i < args.Length; i++)
                 {
                     switch (args[i].ToLower())
                     {
-                        case "-console":
-                            isConsole = true;
+             /*           case "-console"://NO
+                            //StartConsoleProcess();
+                            //isServer = false;
+                            //primaryClass = new ProcessPipe(false);
+                            processPipe = new ProcessPipe(false);
+                            processPipe.ConnectToPipeServer();
+                            console = new ConsoleOutput();
+                            //Console.WriteLine(console != null);
+                            //await Task.Delay(1000);
+                            //output = new ConsoleOutput(true);
+                            //isConsole = true;
                             break;
+                        case "-startconsole":
+                            //processPipe = new ProcessPipe(false);
+                            //console = new ConsoleOutput();
+                            break;*/
+                 //       case "-server":
+                 //           StartServerProcess();
+                 //           break;
                         case "-startserver":
-                            isServerStart = true;
+                            //isServer = true;
+                            processPipe = new ProcessPipe();
+                            //processPipe = new ProcessPipe(true);
+                            //need to check somehow if pipeServer was created or not, if not then skip making a new server and exit
+                            
+                            if (!processPipe.isPipeServerStarted)
+                            {
+                                return;
+                            }
+
+                            //bool serverCreated = await CreateServer();//make the serverMain
+                            AppDomain currentDomain = AppDomain.CurrentDomain;
+                            currentDomain.UnhandledException += new UnhandledExceptionEventHandler(MyExceptionHandler);
+                            server = new ServerMain(processPipe);
+                            //ServerFunctions.server = new ServerMain(processPipe);
+                            //return ServerFunctions.server.isServerCreated;
+
+                            if (server.isServerCreated)//this means serverMain was created and StartServer from that was good
+                            {
+                                //Console.SetError(ServerFunctions.server.logFile);
+                                await Task.Delay(1000);//wait 1 second to let any named pipe outputs connect
+                                await server.StartServer();//start the server task
+                                AddTaskToQueue(server.ServerRunning());//do the queue.wait thing until we shut everything down
+                            //    programTask = ServerFunctions.server.ServerRunning();
+                            /*    try
+                                {
+                                    programTask.Wait();
+                                    //return;
+                                }
+                                catch (Exception ex)
+                                {
+                                    if (ServerFunctions.server != null)
+                                    {
+                                        ServerFunctions.server.Log(ex.ToString());
+                                        ServerFunctions.server.SendToConsole(ex.ToString());
+                                    }
+                                    //return;
+                                    //Console.WriteLine(ex.ToString());
+                                    //Console.ReadKey();
+                                }*/
+                            }
+                            else
+                            {
+                                return;
+                            }
+                            //isServerStart = true;
+                            break;
+                        case "-startserverprocess"://no
+                            Process newServer = new Process();
+
+                            ProcessStartInfo serverProcessSI = new ProcessStartInfo()
+                            {
+                                FileName = exeFilename,
+                                UseShellExecute = false,
+                                //RedirectStandardOutput = true,
+                                RedirectStandardError = true,
+                                CreateNoWindow = true,
+                                ArgumentList = { "-startserver" }
+                            };
+                        //    newServer.ErrorDataReceived += new DataReceivedEventHandler(ErrorHandler);
+                            newServer.StartInfo = serverProcessSI;
+                            newServer.Start();
+                            newServer.BeginErrorReadLine();
+
                             break;
                     }
 
                 }
 
-            } else
+            }
+            else
             {
-                //check to see if server is already running
-                //if it is, this process is going to be server console
-                //if not, this process is going to be (temporarily) the server startup console output, after we start another process for the server
-                //then this process will terminate
+                //no args, so we try to start a new server
+                //first, check to see if one is running already by trying to create a new pipe server
+                processPipe = new ProcessPipe();
 
-                //no args means at least either console or output
-                //NamedPipeClientStream clientPipe = new NamedPipeClientStream(".", Config.pipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
-                //pipeStream = clientPipe;
-                //               pipeRead = ReadFromPipe(clientPipe);
-                //StartServerProcess();
-                //see if client is already started
-                output = new ConsoleOutput();
-                
-                Console.WriteLine("Checking if server is already running...");
-                bool isPipeConnected = await output.ConnectToPipeServer();
-
-                if (isPipeConnected)
+                if (processPipe.isPipeServerStarted)
                 {
-                    Console.WriteLine("Server is running. Starting up server console...");
-                    //pipeRead = ReadFromPipe(clientPipe);
+                    //this means that we just started a new pipe server, meaning one wasn't running yet already
+                    //so we shut this one down and start the server process
+                    processPipe.CloseServerPipe();
+                    StartServerProcess();
+                    Console.WriteLine("Server has been started.");
+                    //Console.WriteLine("If you would like to start the admin console, run the exe again by itself or add '-console'.");
+                    //Console.WriteLine("ex: onnaMUD.exe -console");
+                    Console.WriteLine($"{Environment.NewLine}This output will self-destruct in 5 seconds...");
+                    //processPipe.CloseClientPipe();
+                    await Task.Delay(5000);
                 } else
                 {
-                    Console.WriteLine("Server not started. Starting it up now...");
-                    StartServerProcess();
-                    //await output.ConnectToPipeServer();
-                    //pipeRead = ReadFromPipe(clientPipe);
+                    //failed in making a new one, so that means one is running already
+                    Console.WriteLine("There is a server already running.");
+                    Console.WriteLine("If you would like to run multiple servers, please make sure each server you're going to run");
+                    Console.WriteLine("is running a .exe from its own directory.");
+                    Console.WriteLine($"{Environment.NewLine}This output will self-destruct in 5 seconds...");
+                    //processPipe.CloseClientPipe();
+                    await Task.Delay(5000);
+
                 }
 
-/*                try
+                    //processPipe = new ProcessPipe(false);
+                    //isServer = false;
+
+                    //go ahead and do the 'try and connect to the pipe server to start with and if not, THEN start a new server process?/
+                    //if server is already running and we can connect, then console
+                    //if can't connect, try new process and try again?
+                    //processPipe.pipeConnectTokenSource = new CancellationTokenSource();//?
+/*
+                    bool tryToConnect = true;
+                bool firstTry = true;
+
+                while (tryToConnect)
                 {
-                    Console.WriteLine("Checking if server is already running...");
-                    await clientPipe.ConnectAsync(5000);
-                    Console.WriteLine("Server is running. Starting up server console...");
-                    pipeRead = ReadFromPipe(clientPipe);
-                    isConsole = true;
-                }
-                catch (TimeoutException)
-                {
-                    Console.WriteLine("Server not started. Starting it up now...");
-                    StartServerProcess();
-                    pipeRead = ReadFromPipe(clientPipe);
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine(ex.ToString());
-                    await Task.Delay(5000);
-                    return;
+                    processPipe.clientPipeTimeout = 3000;
+                   // processPipe.isPipeConnected = await processPipe.ConnectToPipeServer();
+
+                    if (processPipe.isPipeConnected)
+                    {
+                        if (firstTry)
+                        {
+                            //server already running, so start the console
+                            tryToConnect = false;
+                            //processPipe.CloseClientPipe();
+                            //StartConsoleProcess();
+                            processPipe.clientPipeTimeout = 0;
+                            
+                            //console = new ConsoleOutput();
+                            //Console.WriteLine("new console?");
+                            //await Task.Delay(2000);
+                        } else
+                        {
+                            //second try so we just started server, not Console
+                            tryToConnect = false;
+                            Console.WriteLine("Server has been started.");
+                            //Console.WriteLine("If you would like to start the admin console, run the exe again by itself or add '-console'.");
+                            //Console.WriteLine("ex: onnaMUD.exe -console");
+                            Console.WriteLine($"{Environment.NewLine}This output will self-destruct in 5 seconds...");
+                            processPipe.CloseClientPipe();
+                            await Task.Delay(5000);
+                        }
+                    } else
+                    {
+                        if (firstTry)
+                        {
+                            //we didn't connect, so either error/console already connected, or server not started so we'll try to start one
+                            firstTry = false;
+                            StartServerProcess();
+                            await Task.Delay(500);//wait 1/2 second to give any already running outputs a chance to connect to the server before this one tries
+                        } else
+                        {
+                            //didn't connect on the second try so that means error/another console
+                            tryToConnect = false;
+                            Console.WriteLine("It seems the server failed to start.");
+                            Console.WriteLine("Please check server logs for errors and try again.");
+                            //Console.WriteLine("Either the server failed to start or you have already another console connected to the server.");
+                            //Console.WriteLine("Please check server logs for errors and/or close any other consoles and try again.");
+                            Console.WriteLine("Exiting...");
+                            processPipe.CloseClientPipe();
+                        }
+                    }
+
                 }*/
+
+                //processPipe.isPipeConnected = await processPipe.ConnectToPipeServer(5000);
+
+                    //we're not going to bother starting a ConsoleOutput unless we're actually going full console mode
+                    //             output = new ConsoleOutput(false);//don't know if we're starting the full console or not
+
+                    //  Console.WriteLine("Checking if server is already running...");
+                    //bool isPipeConnected = await output.ConnectToPipeServer();
+
+                    //if (isPipeConnected)
+                    // {
+                    //server is started and this process has connected to it
+                    //do the task queue wait thing here for either the normal output or console to exit
+//                    programTask = output.OutputRunning();// ServerFunctions.server.ServerRunning();
+//                try
+//                {
+//                    programTask.Wait();
+//                    return;
+//                }
+//                catch (Exception ex)
+//                {
+//                    Console.WriteLine(ex.ToString());
+//                    return;
+//                }
+
+                //Console.WriteLine("any key to exit...");
+                //Console.ReadKey();
+                // } else
+                // {
+                //either server didn't start, or another output connected to it instead of this one, so this one needs to exit
+                //     Console.WriteLine("Either the server failed to start or you have already another console connected to the server.");
+                //     Console.WriteLine("Exiting...");
+                //     await Task.Delay(4000);
+                //Console.WriteLine("Server not started. Starting it up now...");
+                //output.ConnectToPipeServer();
+                //await Task.Delay(2);
+                //StartServerProcess();
+
+                //wait for server to done starting? by way of a response from server?
+
+                // Console.WriteLine("waiting for server to be done starting...");
+                // Console.ReadKey();
+                //await output.ConnectToPipeServer();
+                //pipeRead = ReadFromPipe(clientPipe);
+                // return;
+                //}
+
+                /*                try
+                                {
+                                    Console.WriteLine("Checking if server is already running...");
+                                    await clientPipe.ConnectAsync(5000);
+                                    Console.WriteLine("Server is running. Starting up server console...");
+                                    pipeRead = ReadFromPipe(clientPipe);
+                                    isConsole = true;
+                                }
+                                catch (TimeoutException)
+                                {
+                                    Console.WriteLine("Server not started. Starting it up now...");
+                                    StartServerProcess();
+                                    pipeRead = ReadFromPipe(clientPipe);
+                                }
+                                catch (Exception ex)
+                                {
+                                    Console.WriteLine(ex.ToString());
+                                    await Task.Delay(5000);
+                                    return;
+                                }*/
 
                 //await Task.Delay(5000);
                 //return;
             }
 
-            //if we're going to be either server console or temp output, start the pipe client. else, do the startserverprocess method
-            if (!isServerStart)
-            {
-                Console.WriteLine("trying...");
-                await output.ConnectToPipeServer();
+            //when we get to this point, either we have something running in a concurrentQueue (serverMain stuff or ConsoleOutput stuff)
+            //or we don't
+            //if we do, then we'll sit here until they're done/exited/quit/etc. if not, then we'll exit
 
-
-            }
-            else
+            while (processQueue.Count > 0)
             {
-                Console.WriteLine("starting...");
-                await StartServer();
-                if (serverTask != null)
+                Task task;
+                if (processQueue.TryDequeue(out task))
                 {
-                    serverTask.Wait();
+                    task.Wait();
                 }
+                await Task.Delay(1);//not sure if this is needed or not, but just in case so we don't have a wild 'while' running
             }
 
 
-//            AppDomain currentDomain = AppDomain.CurrentDomain;
-//            currentDomain.UnhandledException += new UnhandledExceptionEventHandler(MyExceptionHandler);
+            //if we're going to be either server console or temp output, start the pipe client. else, do the startserverprocess method
+            //           if (!isServerStart)
+            //           {
+            //Console.WriteLine("trying...");
+            //               await output.ConnectToPipeServer();
+            //Console.WriteLine("moo");
+            //output.SendFromConsole("start server");
+
+            //            }
+            //            else
+            //            {
+            //Console.WriteLine("starting...");
+            //we also need to check here is they are trying to run -startserver twice?
+
+            /*         bool serverCreated = await StartServer();
+                     if (serverTask != null)
+                     {
+                         try
+                         {
+                             serverTask.Wait();
+                         }
+                         catch (Exception ex)
+                         {
+                             Console.WriteLine(ex.ToString());
+                             Console.ReadKey();
+                         }
+                     }*/
+
+            //           }
+            //Console.ReadLine();
+            //return;
+            //            AppDomain currentDomain = AppDomain.CurrentDomain;
+            //            currentDomain.UnhandledException += new UnhandledExceptionEventHandler(MyExceptionHandler);
             //Start.instance.TempTry();
             //Start blah = new Start();
             //blah.TempTry();
 
-            consoleDir = Path.Combine(Directory.GetCurrentDirectory(), "console");
-            if (!Directory.Exists(consoleDir))
-            {
-                Directory.CreateDirectory(consoleDir);
-            }
+            //           consoleDir = Path.Combine(Directory.GetCurrentDirectory(), "console");
+            //           if (!Directory.Exists(consoleDir))
+            //           {
+            //               Directory.CreateDirectory(consoleDir);
+            //           }
 
             //string logFileName = Config.instance.GetNextLogFileName(consoleDir, "consoleError");
-            mainErrorLog = new TimeStampedTextWriter(Config.GetNextLogFileName(consoleDir, "consoleError"));//  new TimeStampedStream(Config.instance.GetNextLogFileName(consoleDir, "consoleError"));
+            //           mainErrorLog = new TimeStampedTextWriter(Config.GetNextLogFileName(consoleDir, "consoleError"));//  new TimeStampedStream(Config.instance.GetNextLogFileName(consoleDir, "consoleError"));
             //mainErrorLog = Config.instance.GetNextLogFileName(consoleDir, "consoleError");
 
             //standard Console.Write/WriteLine redirected to mainErrorLog file to catch any errors thrown by the program (hopefully)
@@ -164,172 +400,24 @@ namespace onnaMUD
             //mainErrorLog = File.CreateText(mainLogPath);
             //mainErrorLog.AutoFlush = true;
 
-            //hopefully this works?
-            Console.SetError(mainErrorLog);
-            //Console.SetOut(mainErrorLog);//redirects Console.WriteLine (from error messages and such that I haven't redirected myself)
-            ServerConsole consoleWindow = new ServerConsole();
-            //Console.Error.WriteLine("testing?");
-            //tasks.Add(consoleWindow.ConsoleWindow());
-            //newConsole is the output from the main program/menu that we'll show on the console window but not saved in the mainErrorLog file
-            //            newConsole = new StreamWriter(Console.OpenStandardOutput());
-            //            newConsole.AutoFlush = true;
-            //newConsole.WriteLine("Testing");
-            //string logFileName = "";
-            //            TextWriter blah = new TimeStampedStream(logFileName);
-            //   StreamWriter blah1 = () as StreamWriter;
-            //Console.WriteLine("blahblahblahblah    hidey ho");
-            //newConsole.WriteLine("does this work?");
-            //Console.Write("testing........");
-            //string menuWindow = "main";
-            //Config.instance.LoadConfig();
-//            if (!Config.LoadConfig())
-//                return;//if we had to create a new appsettings.json file, exit so user can edit file as needed, or wrong number of login servers found
-
-            //tasks.Add(consoleWindow.ConsoleWindow());//this is the 'menu' part of it
-
- /*           if (args.Length > 0)
-            {
-                //Console.WriteLine(args.Length);
-                //args will be any servers we want to start automatically (from a bat file?)
-                for (int i = 0; i < args.Length; i++)
-                {
-                    if (args[i].IndexOf("-") == 0)
-                    {
-                        //if this arg starts with -, remove it
-                        args[i] = args[i].Remove(0, 1);
-                    }
-
-                    //for (int j = 0; j < Config.instance.config.servers.Count; j++)
-                    //{
-                    for (int j = 0; j < ServerFunctions.servers.Count; j++)
-                    {
-                     //   if (args[i] == ServerFunctions.servers[j].serverInfo.Name)
-                     //   {
-                     //       ServerFunctions.servers[j].StartServer();
-                     //   }
-                    }
-
-                }
-                //after servers are auto-started, show message, wait 2 seconds, then let the serverconsole proceed
-                ServerConsole.newConsole.WriteLine("Servers are done auto-starting.");
-                await Task.Delay(2000);
-            }*/
-
-            //after loading config, and check command line args, start any auto-start servers
- /*           for (int i = 0; i < ServerFunctions.servers.Count; i++)//why does this cause the ConsoleWindow task to block CheckQueue?
-            {
-                if (ServerFunctions.servers[i].serverInfo.AutoStart)
-                {
-                    ServerConsole.newConsole.WriteLine($"Starting up {ServerFunctions.servers[i].serverInfo.Name} server...");
-          //          ServerFunctions.servers[i].StartServer();
-                    ServerConsole.newConsole.WriteLine($"Done.");
-                    await Task.Delay(1000);
-                }
-            }
-            ServerConsole.newConsole.WriteLine("Servers are done auto-starting.");
-            await Task.Delay(1500);*/
-  
-//            tasks.Add(CheckQueueForCommands());
+            //            tasks.Add(CheckQueueForCommands());
             //ServerConsole.newConsole.WriteLine("moo?");
 
-            tasks.Add(consoleWindow.ConsoleWindow());//the Console.ReadLine blocks? so this needs to be last?
+            //            tasks.Add(consoleWindow.ConsoleWindow());//the Console.ReadLine blocks? so this needs to be last?
             //ServerConsole consoleWindow = new ServerConsole();
             //tasks.Add(consoleWindow.ConsoleWindow());
-            tasks.Add(CheckQueueForCommands());
+            //      tasks.Add(CheckQueueForCommands());
             //ServerConsole.newConsole.WriteLine("moo?");
             //checkQueue = true;
             //commandTask = CheckQueueForCommands();
 
-            await Task.WhenAll(tasks);
+            //      await Task.WhenAll(tasks);
 
- /*           if (Config.config.servers.Count == 0)
-            {
-                newConsole.WriteLine("You currently somehow have no servers loaded from the appsettings.");
-                newConsole.WriteLine("Kinda hard to interact with servers when there aren't any there, yes?");
-                newConsole.WriteLine("Exiting...");
-                await Task.Delay(2000);
-                return;
-            }
-            newConsole.WriteLine("Welcome to the onnaMUD main console!");
-            checkQueue = true;
-            commandTask = CheckQueueForCommands();
-            Server? tempServer = null;
-            while (true)// !IsServerRunning())
-            {
-                switch (menuWindow)
-                {
-                    case "main":
-                        int numOfServers = servers.Count;// Config.instance.config.servers.Count;
-                        //Console.WriteLine("Please make sure you run the initial server environment option before anything else!");
-                        for (int i = 0; i < servers.Count; i++)
-                        {
-                            if (i == 0)
-                            {//we're setting the login server to be first so it's index 0
-                                newConsole.WriteLine($"{Environment.NewLine}Login server status: {(servers[0].serverIsRunning ? "Up" : "Not started")}");
-                            } else
-                            {
-                                newConsole.WriteLine($"Game server {servers[i].serverName} status: {(servers[i].serverIsRunning ? "Up" : "Not started")}");
-                            }
-
-                        }
-
-
-                        for (int i = 0; i < servers.Count; i++)
-                        {
-                            newConsole.WriteLine($"{i + 1}) {(servers[i].serverIsRunning ? $"Shutdown {servers[i].serverName} server" : $"Start {servers[i].serverName} server")}");
-                        }
-
-                        newConsole.Write(">");
-                        int menuOption;
-                        //Int32.TryParse(Console.ReadLine(), out menuOption);
-
-                        if (Int32.TryParse(Console.ReadLine(), out menuOption))// menuOption <= numOfServers)
-                        {//parse was successful
-                            if (menuOption <= numOfServers && menuOption > 0)
-                            {//option picked is in the range of options
-                                //newConsole.WriteLine("picked!");
-                                //await Task.Delay(2000);
-                                tempServer = servers[menuOption - 1];
-
-
-                                //start/stop server method here
-                                await StartOrStopServer(tempServer);
-                                //newConsole.WriteLine("next!");
-                            } else
-                            {//option picked is not in the range of options
-                                newConsole.WriteLine("Invalid selection! Please enter the number for the option you want.");
-                                await Task.Delay(2000);
-                            }
-                        } else
-                        {//parse failed
-                            newConsole.WriteLine("Invalid selection! Please enter the number for the option you want.");
-                            await Task.Delay(2000);
-                        }
-                        break;
-
-
-                }
-
-
-                //Console.WriteLine("boo");
-                //Thread.Sleep(1000);
-
-                //loginServerStatus = (loginServer == null) ? ": Not started" : ": Up";
-
-
-                //Console.WriteLine(Environment.NewLine);
-                //Console.ReadLine();
-            }*/
-
-//            Console.WriteLine("Server has shut down?");
- //           Console.ReadKey();
-
-            //Console.WriteLine($"Exit code of ServerConfig was: {configResult}");
-            //  Console.WriteLine("Press any key to exit.");
-            //  Console.ReadKey();
+            //            Console.WriteLine("Server has shut down?");
+            //           Console.ReadKey();
 
             //Console.WriteLine(serversList.Count);
-            //Console.ReadKey();
+            //           Console.ReadKey();
             //return;
 
         }
@@ -338,32 +426,132 @@ namespace onnaMUD
         {
             Exception excep = (Exception)args.ExceptionObject;
             //Console.WriteLine("MyHandler caught : " + e.Message);
-            Console.Error.WriteLine(excep.Message);
-
+            Console.Error.WriteLine($"***error***{excep.Message}");
+            Console.Error.WriteLine($"***error***{excep.StackTrace}");
+            if (server != null)
+            {
+                server.consolePipe.SendToConsole($"***error***{excep.Message}");
+                server.consolePipe.SendToConsole($"***error***{excep.StackTrace}");
+            }
         }
 
         static public void StartServerProcess()
         {
+            //this should start a new parent process, it does
+
             ProcessStartInfo serverProcessSI = new ProcessStartInfo()
             {
                 FileName = exeFilename,
-                UseShellExecute = true,
-                //CreateNoWindow = false,
-                ArgumentList = { "-startserver" }
+                UseShellExecute = false,
+                //RedirectStandardOutput = true,
+                //RedirectStandardError = true,
+                CreateNoWindow = true,
+                ArgumentList = { "-startserver" }//this new process will be running the actual server
             };
             //serverProcessSI.UseShellExecute = false;
             //serverProcessSI.CreateNoWindow = false;
             //Console.WriteLine(Process.GetCurrentProcess().MainModule.FileName);
+            //newServer.StartInfo = serverProcessSI;
             Process.Start(serverProcessSI);
+            //newServer = Process.Start(serverProcessSI);
+            //newServer.Start();
+            //newServer.BeginErrorReadLine();
+            //newServer.WaitForExit();
+        }
+
+        static public void StartConsoleProcess()
+        {
+            ProcessStartInfo consoleProcessSI = new ProcessStartInfo()
+            {
+                FileName = exeFilename,
+                UseShellExecute = false,
+                //RedirectStandardOutput = true,
+                //RedirectStandardError = true,
+                RedirectStandardInput = true,
+                //CreateNoWindow = true,
+                ArgumentList = { "-startconsole" }//this new process will be running the actual server
+            };
+            //serverProcessSI.UseShellExecute = false;
+            //serverProcessSI.CreateNoWindow = false;
+            //Console.WriteLine(Process.GetCurrentProcess().MainModule.FileName);
+            //newServer.StartInfo = serverProcessSI;
+            Process.Start(consoleProcessSI);
 
         }
 
-        static public async Task StartServer()
+ /*       static void ErrorHandler(object sender, DataReceivedEventArgs error)
+        {
+            if (!String.IsNullOrEmpty(error.Data))
+            {
+                string todayDate = DateTime.Today.ToString("MM-dd-yyyy");
+                string logFileDate = $"crash log {todayDate}";
+                bool foundFileName = false;
+                int logfileIndex = 1;
+                //if there is actually anything in the error
+                string crashDir = Path.Combine(Directory.GetCurrentDirectory(), "crash logs");
+                if (!Directory.Exists(crashDir))
+                {
+                    //subdirectory for log files
+                    Directory.CreateDirectory(crashDir);
+                }
+
+                if (streamError == null)
+                {
+                    try
+                    {
+                        string logFileName = $"{logFileDate}.log";// ({logfileIndex}).log";
+                        string fullLogPath = Path.Combine(crashDir, logFileName);
+                        streamError = new StreamWriter(fullLogPath, true);
+                    }
+                    catch (Exception e)
+                    {
+                        Console.WriteLine("Could not open error file!");
+                        Console.WriteLine(e.Message.ToString());
+                    }
+                }
+
+                streamError.WriteLine(String.Format("{0} {1}", DateTime.Now.ToString("HH:mm:ss"), error.Data));  //$"***ERROR*** {error.Data}");
+                streamError.Flush();
+            }
+
+         //   if (ServerFunctions.server != null)
+         //   {
+        // Console.WriteLine($"***ERROR*** {error.Data}");
+            //Console.Error.WriteLine($"***ERROR*** {e.Data}");
+            //Console.Error.Flush();
+                //ServerFunctions.server.logFile.WriteLine($"***ERROR*** {e.Data}");
+                //ServerFunctions.server.logFile.Flush();
+                //Console.Error.WriteLine($"***ERROR*** {e.Data}");
+         //   }
+            //Console.WriteLine($"***ERROR*** {e.Data}");
+        }*/
+
+ /*       static public async Task<bool> CreateServer()
         {
             AppDomain currentDomain = AppDomain.CurrentDomain;
             currentDomain.UnhandledException += new UnhandledExceptionEventHandler(MyExceptionHandler);
 
             ServerFunctions.server = new ServerMain();
+            //Console.WriteLine(ServerFunctions.server.isServerCreated);
+
+            return ServerFunctions.server.isServerCreated;
+            if (ServerFunctions.server.isServerCreated)
+            {
+                programTask = ServerFunctions.server.ServerRunning();
+                if (programTask != null)
+                {
+                    Console.WriteLine("good");
+                } else
+                {
+                    Console.WriteLine("bad");
+                }
+                return true;
+            } else
+            {
+                //something happened and the serverMain didn't get created correctly?
+                //or server is already started
+                return false;
+            }
 
             //await output.ConnectToPipeServer();
             //wait for console or temp output to connect, then continue
@@ -371,18 +559,25 @@ namespace onnaMUD
             //pipeStream = ServerFunctions.server.namedPipeServer;
             //     pipeRead = ReadFromPipe(ServerFunctions.server.namedPipeServer);
             //await isOutputConnected.Task;
-            await ServerFunctions.server.isOutputConnected.Task;
+            //await ServerFunctions.server.isOutputConnected.Task;
             //       if (!Config.LoadConfig())
             //           return;//if we had to create a new appsettings.json file, exit so user can edit file as needed
 
-            serverTask = ServerFunctions.server.StartServer();
-            if (serverTask == null)
-            {
-                //if the return task is null, that means the config wasn't loaded and is default so we exit so user can edit
+           // serverTask = ServerFunctions.server.ServerRunning();//  ServerFunctions.server.StartServer();//we'll do this from a pipe client command
+                                                                //         if (serverTask == null)
+                                                                //         {
+                                                                //if the return task is null, that means the config wasn't loaded and is default so we exit so user can edit
+                                                                //             Console.WriteLine("exiting...");
+                                                                //             await Task.Delay(3000);
+                                                                //         }
 
-            }
+            //Console.ReadLine();
+            return true;
+        }*/
 
-
+        public static void AddTaskToQueue(Task taskToQueue)
+        {
+            processQueue.Enqueue(taskToQueue);
         }
 
  /*       static public async Task StartOrStopServer(Server? tempServer)
@@ -407,7 +602,7 @@ namespace onnaMUD
 
         }*/
 
-        static public async Task CheckQueueForCommands()
+   /*     static public async Task CheckQueueForCommands()
         {
             //ServerConsole.newConsole.WriteLine("command queue task is started?");
             checkQueue = true;
@@ -425,42 +620,9 @@ namespace onnaMUD
                     }
 
                 }
-
-          /*      if (loginServer.CommandsInQueue() && loginServer.serverIsRunning)
-                {
-                    //newConsole.WriteLine("command in login queue");
-                    loginServer.ProcessMessage(loginServer.commandQueue[0].clientGuid, loginServer.commandQueue[0].commandMessage);
-                    loginServer.commandQueue.RemoveAt(0);
-                }
-                if (gameServers.Count > 0)
-                {
-                    for (int i = 0; i < gameServers.Count; i++)
-                    {
-                        if (gameServers[i].CommandsInQueue() && gameServers[i].serverIsRunning)
-                        {
-                            gameServers[i].ProcessMessage(gameServers[i].commandQueue[0].clientGuid, gameServers[i].commandQueue[0].commandMessage);
-                            gameServers[i].commandQueue.RemoveAt(0);
-                        }
-                    }
-                }*/
                 await Task.Delay(1);//even this smallest wait will slow down the while loop, hopefully
             }
-
-
-        }
-
-
-        //this should be the clients that have been logged in, authenticated, transfered to game server(s) and will be removed after confirmation    ?
-        //no longer needed since this will be on each server class itself
-        public class Connections
-        {
-            public Task? clientTask = null;
-            public TcpClient? client = null;
-            public string serverOrUser = "";
-            public Guid? guid = null;//connected server name or user guid goes here
-
-        }
-
+        }*/
         
         public class ServerInfo//for the list of servers parsed from the config file
         {

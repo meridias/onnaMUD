@@ -15,6 +15,7 @@ using onnaMUD.MUDServer;
 using onnaMUD.Database;
 using onnaMUD.Utilities;
 using onnaMUD.BaseClasses;
+using static onnaMUD.Program;
 
 namespace onnaMUD.Settings
 {
@@ -55,7 +56,7 @@ namespace onnaMUD.Settings
         //static public List<ServerInfo> serversList = new List<ServerInfo>();
 
         public static List<AccountSettings> accountSettings = new List<AccountSettings>();
-        public static string pipeName = "onnaMUDPipe";
+        //public static string pipeName = "onnaMUDPipe";
 
         public Config()
         {
@@ -68,10 +69,10 @@ namespace onnaMUD.Settings
             string? jsonString = "";
             if (!File.Exists("appsettings.json"))
             {
-                ConsoleOutput.SendConsole("appsettings.json file could not be found! Creating default file.");
-                ServerConsole.newConsole.WriteLine("appsettings.json file could not be found! Creating default file.");
-                ServerConsole.newConsole.WriteLine("Please edit this file to your preferred configuration.");
-                ServerConsole.newConsole.WriteLine("Exiting...");
+                //ServerFunctions.server.SendToConsole("appsettings.json file could not be found! Creating default file.");
+                server.consolePipe.SendToConsole("appsettings.json file could not be found! Creating default file.");
+                server.consolePipe.SendToConsole("Please edit this file to your preferred configuration.");
+                server.consolePipe.SendToConsole("Press any key to exit...");
                 //config.servers.Add(new SettingsServers());
                 jsonString = JsonConvert.SerializeObject(config, Formatting.Indented);
                 File.WriteAllText("appsettings.json", jsonString);
@@ -84,10 +85,10 @@ namespace onnaMUD.Settings
                 config = JsonConvert.DeserializeObject<AppSettings>(jsonString);
 
                 //ServerConsole.newConsole.WriteLine("appsettings.json file loaded!");
-                ConsoleOutput.SendConsole("appsettings.json file loaded!");
+  //              ServerFunctions.server.SendToConsole("appsettings.json file loaded!");
 
                 //for now...
-                return true;
+                //return true;
 
  /*               int numOfLogins = 0;
 
@@ -128,12 +129,12 @@ namespace onnaMUD.Settings
             }
 
             //gotta see if the db is there before we try to connect to it to do stuff
-            ServerConsole.newConsole.WriteLine("Checking for local database...");
-            DB.CheckForLocalDB();
+ //           ServerFunctions.server.SendToConsole("Checking for local database...");
+ //           DB.CheckForLocalDB();
             //moving the server info out of the config and putting it in the database
             //get the serverinfo for each created server, if any
             //?
-            if (DB.DBAccess.DoesCollectionExist(DB.Collections.Server))
+ /*           if (DB.DBAccess.DoesCollectionExist(DB.Collections.Server))
             {
                 var servers = DB.DBAccess.GetList<Server>(DB.Collections.Server);
                 foreach (Server server in servers)
@@ -145,18 +146,18 @@ namespace onnaMUD.Settings
                     ServerFunctions.servers.Add(temp);
                 }
             }
-            ServerConsole.newConsole.WriteLine("Local database loaded.");
+            ServerFunctions.server.SendToConsole("Local database loaded.");*/
             //load the .cs files from BaseClasses directory so we can read the script sources as strings for object editing...
             //yeah, no. gonna set the strings to send to frontend manually
-            if (Directory.Exists(Path.Combine(Directory.GetCurrentDirectory(), "BaseClasses")))
-            {
+//            if (Directory.Exists(Path.Combine(Directory.GetCurrentDirectory(), "BaseClasses")))
+//            {
                 //ServerConsole.newConsole.WriteLine("class directory found");
-                baseClasses = Directory.GetFiles(Path.Combine(Directory.GetCurrentDirectory(), "BaseClasses"), "*.cs", SearchOption.TopDirectoryOnly).ToList();
+//                baseClasses = Directory.GetFiles(Path.Combine(Directory.GetCurrentDirectory(), "BaseClasses"), "*.cs", SearchOption.TopDirectoryOnly).ToList();
 
                 //var allFilenames = Directory.EnumerateFiles(serverDirectory).Select(p => Path.GetFileName(p));
                 //var commandDLL = allFilenames.Where(fn => Path.GetExtension(fn) == ".dll").ToArray();
 
-            }
+//            }
 
             //after we've added the servers to the ServerMain server list
             //scriptDir = Path.Combine(Directory.GetCurrentDirectory(), "command scripts");//not gonna need this either, will put command dll in each server dir
@@ -279,7 +280,7 @@ namespace onnaMUD.Settings
                           ServerMain.conn.Close();
                       }*/
 
-            ServerConsole.newConsole.WriteLine("Setting account values");
+  /*          ServerFunctions.server.SendToConsole("Setting account values...");
             //this is to input the account types and their settings into the list of account types
             for (int i = 0; i < Enum.GetValues(typeof(AccountType)).Length; i++)
             {
@@ -292,7 +293,7 @@ namespace onnaMUD.Settings
 
                 }
             }
-            ServerConsole.newConsole.WriteLine("Account values set!");
+            ServerFunctions.server.SendToConsole("Account values set!");*/
 
             return true;
         }
@@ -485,10 +486,11 @@ namespace onnaMUD.Settings
             return null;
         }*/
 
-        [Serializable]
+        [Serializable]//?
         public class AppSettings
         {
-            public string gameName = "default ONNAMud server";
+            public string serverName = "testServer";
+            public string gameName = "default ONNAMud game";
             public string auth = "blahblahpassword";
             public string primaryAdminAccount = "admin";
             //public string ipOrDomain = "localhost";

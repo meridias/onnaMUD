@@ -35,7 +35,7 @@ namespace onnaMUD.Characters
         //[JsonIgnore]
         public Task? ClientTask { get; set; }//the task for incoming data from client
         //[JsonIgnore]
-        public Guid Guid { get; set; } = Guid.Empty;//this will be set at connection, if bad login, will be .Empty
+        public Guid Guid { get; set; } = Guid.Empty;//was random guid for this connection attempt, gonna get rid of this
         //[JsonIgnore]
         public string IP { get; set; } = "";//stored string of tcpclient incoming ip address so we can show it after client is disconnected for whatever reason
         //[JsonIgnore]
@@ -75,8 +75,8 @@ namespace onnaMUD.Characters
         public enum ConnectionStatus
         {
             NotConnected = 0,
-            Connecting = 1,
-            CheckingAccount = 2,
+            Connecting = 1,//we stay on this until account is validated, by way of correct accountname/password
+            CheckingAccount = 2,//no?
             NewTrialSetup = 3,
             CharacterSelect = 4,
             CharacterCreation = 5,
